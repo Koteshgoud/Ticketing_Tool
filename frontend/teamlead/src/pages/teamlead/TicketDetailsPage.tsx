@@ -312,7 +312,7 @@ export const TicketDetailsPage: React.FC = () => {
               ASSIGNED BY
             </span>
             <span className="font-semibold text-slate-800 truncate block">
-              {ticket.assignedBy || 'Alex Morgan (TL)'}
+              {ticket.assignedBy || (ticket.employee ? `${ticket.employee} (Requester)` : 'Unassigned')}
             </span>
           </div>
 

@@ -52,4 +52,8 @@ export interface Ticket {
   departments?: string[];
   taggedMembers?: { id: string; name: string; department: string; avatar?: string }[];
   taggedMemberIds?: string[];
+  teamLeads?: { id: string; name: string; employeeId: string; role: string; email: string }[];
+  teamLeadIds?: string[];
+  taggedEmployees?: { id: string; name: string; employeeId: string; role: string; email: string }[];
+  employeeIds?: string[];
 }

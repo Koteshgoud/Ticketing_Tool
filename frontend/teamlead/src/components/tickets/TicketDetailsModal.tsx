@@ -295,7 +295,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Assigned By</span>
-                  <span className="font-medium text-slate-700">{ticket.assignedBy || 'Alex Morgan (TL)'}</span>
+                  <span className="font-medium text-slate-700">{ticket.assignedBy || (ticket.employee ? `${ticket.employee} (Requester)` : 'Unassigned')}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Assigned Date</span>
