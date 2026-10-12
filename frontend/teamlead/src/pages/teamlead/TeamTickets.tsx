@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTickets } from '../../hooks/useTickets';
 import { useAuth } from '../../hooks/useAuth';
 import { TicketTable } from '../../components/tickets/TicketTable';
@@ -8,7 +8,7 @@ import { AssignTicketModal } from '../../components/tickets/AssignTicketModal';
 import { Pagination } from '../../components/common/Pagination';
 import { SearchBar } from '../../components/common/SearchBar';
 import { EmptyState } from '../../components/common/EmptyState';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { Ticket } from '../../types/ticket';
 import { CheckCircle2 } from 'lucide-react';
 
@@ -16,6 +16,7 @@ export const TeamTickets: React.FC = () => {
   const { tickets, selectedTicket, setSelectedTicket } = useTickets();
   const { users } = useAuth();
   const outletContext = useOutletContext<{ globalSearch?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState(outletContext?.globalSearch || '');
@@ -32,13 +33,75 @@ export const TeamTickets: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  const tabs = ['All', 'Open', 'Pending', 'Resolved', 'Closed', 'Escalated'];
+  const tabs = ['All', 'Unassigned', 'In Progress', 'SLA Risk', 'Open', 'Pending', 'Escalated', 'Resolved', 'Closed'];
   const agentsList = users.map((u) => u.name);
+
+  // Helper functions for filtering
+  const isTicketUnassigned = (t: Ticket) =>
+    !t.assignedAgent ||
+    t.assignedAgent.trim() === '' ||
+    t.assignedAgent.toLowerCase() === 'unassigned' ||
+    t.assignedToType === 'unassigned';
+
+  const isTicketSLARisk = (t: Ticket) => {
+    const s = (t.slaStatus || '').toLowerCase();
+    return s.includes('risk') || s.includes('breach') || s.includes('approach');
+  };
+
+  // Synchronize URL query parameters (?filter=, ?status=, ?sla=)
+  useEffect(() => {
+    const filterParam = searchParams.get('filter')?.toLowerCase();
+    const statusParam = searchParams.get('status')?.toLowerCase();
+    const slaParam = searchParams.get('sla')?.toLowerCase();
+
+    if (filterParam) {
+      if (filterParam === 'all') {
+        setActiveTab('All');
+      } else if (filterParam === 'unassigned') {
+        setActiveTab('Unassigned');
+      } else if (filterParam === 'in-progress' || filterParam === 'inprogress') {
+        setActiveTab('In Progress');
+      } else if (filterParam === 'sla-risk' || filterParam === 'slarisk' || filterParam === 'sla') {
+        setActiveTab('SLA Risk');
+      } else {
+        const match = tabs.find((t) => t.toLowerCase() === filterParam);
+        if (match) setActiveTab(match);
+      }
+    } else if (statusParam) {
+      if (statusParam === 'in-progress' || statusParam === 'inprogress' || statusParam === 'in progress') {
+        setActiveTab('In Progress');
+      } else if (statusParam === 'unassigned') {
+        setActiveTab('Unassigned');
+      } else {
+        const match = tabs.find((t) => t.toLowerCase() === statusParam);
+        if (match) setActiveTab(match);
+      }
+    } else if (slaParam) {
+      setActiveTab('SLA Risk');
+    }
+  }, [searchParams]);
+
+  // Dynamic count badges per tab
+  const getTabCount = (tab: string) => {
+    if (tab === 'All') return tickets.length;
+    if (tab === 'Unassigned') return tickets.filter(isTicketUnassigned).length;
+    if (tab === 'In Progress') return tickets.filter((t) => t.status === 'In Progress').length;
+    if (tab === 'SLA Risk') return tickets.filter(isTicketSLARisk).length;
+    return tickets.filter((t) => (t.status || '').toLowerCase() === tab.toLowerCase()).length;
+  };
 
   // Filtering Logic
   const filteredTickets = tickets.filter((ticket) => {
     // Tab Filter
-    if (activeTab !== 'All' && ticket.status !== activeTab) return false;
+    if (activeTab === 'Unassigned') {
+      if (!isTicketUnassigned(ticket)) return false;
+    } else if (activeTab === 'In Progress') {
+      if (ticket.status !== 'In Progress') return false;
+    } else if (activeTab === 'SLA Risk') {
+      if (!isTicketSLARisk(ticket)) return false;
+    } else if (activeTab !== 'All') {
+      if ((ticket.status || '').toLowerCase() !== activeTab.toLowerCase()) return false;
+    }
 
     // Status Dropdown Filter
     if (statusFilter !== 'All' && ticket.status !== statusFilter) return false;
@@ -77,6 +140,7 @@ export const TeamTickets: React.FC = () => {
     setAgentFilter('All');
     setSlaFilter('All');
     setCurrentPage(1);
+    setSearchParams({});
   };
 
   const handleAssignSuccessToast = (msg: string) => {
@@ -117,10 +181,7 @@ export const TeamTickets: React.FC = () => {
       {/* Tabs Bar Card */}
       <div className="bg-white p-2 border border-slate-200 rounded-xl shadow-xs overflow-x-auto flex items-center gap-1.5">
         {tabs.map((tab) => {
-          const count =
-            tab === 'All'
-              ? tickets.length
-              : tickets.filter((t) => t.status === tab).length;
+          const count = getTabCount(tab);
 
           return (
             <button
@@ -128,6 +189,7 @@ export const TeamTickets: React.FC = () => {
               onClick={() => {
                 setActiveTab(tab);
                 setCurrentPage(1);
+                setSearchParams({ filter: tab.toLowerCase().replace(/\s+/g, '-') });
               }}
               className={`px-3.5 py-2 text-xs font-semibold whitespace-nowrap rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
                 activeTab === tab

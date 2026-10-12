@@ -13,7 +13,7 @@ export const CATEGORIES = [
 
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 
-export const STATUSES = ['Open', 'Pending', 'Resolved', 'Closed', 'Escalated'] as const;
+export const STATUSES = ['Open', 'In Progress', 'Pending', 'Resolved', 'Closed', 'Escalated'] as const;
 
 export const KB_CATEGORIES = [
   'Account & Access',
