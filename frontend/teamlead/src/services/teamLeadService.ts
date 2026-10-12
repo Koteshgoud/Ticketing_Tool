@@ -12,19 +12,21 @@ export const teamLeadService = {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        return data.map((u: any) => ({
-          id: u.id,
-          name: u.name || (u.email ? u.email.split('@')[0] : 'Employee'),
-          email: u.email,
-          phone: u.phone || '',
-          role: (u.role === 'teamlead' ? 'teamlead' : 'employee'),
-          department: u.department || 'Operations',
-          designation: u.designation || 'Team Member',
-          team: u.team || '',
-          avatar: u.avatar || '',
-          location: u.location || '',
-          status: (u.status === 'Inactive' ? 'Inactive' : 'Active'),
-        }));
+        return data
+          .filter((u: any) => u.role !== 'admin')
+          .map((u: any) => ({
+            id: u.id,
+            name: u.name || (u.email ? u.email.split('@')[0] : 'Employee'),
+            email: u.email,
+            phone: u.phone || '',
+            role: (u.role === 'teamlead' ? 'teamlead' : 'employee'),
+            department: u.department || 'Operations',
+            designation: u.designation || (u.role === 'teamlead' ? 'Team Lead' : 'Team Member'),
+            team: u.team || '',
+            avatar: u.avatar || '',
+            location: u.location || '',
+            status: (u.status === 'Inactive' ? 'Inactive' : 'Active'),
+          }));
       }
     } catch (e) {
       console.error('Supabase getEmployees error:', e);

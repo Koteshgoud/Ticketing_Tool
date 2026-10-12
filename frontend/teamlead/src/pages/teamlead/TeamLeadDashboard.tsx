@@ -51,9 +51,9 @@ export const TeamLeadDashboard: React.FC = () => {
   const inProgressCount = tickets.filter((t) => t.status === 'In Progress').length;
   const slaRiskCount = tickets.filter(isTicketSLARisk).length;
 
-  // 2. Prepare Team Members (Max 4 active employees)
+  // 2. Prepare Team Members (Strictly employees, never admins or team leads)
   const employeeUsers = users.filter((u) => u.role === 'employee');
-  const displayEmployees = (employeeUsers.length > 0 ? employeeUsers : users).slice(0, 4);
+  const displayEmployees = employeeUsers.slice(0, 4);
 
   // Helper to count active tickets for a user
   const getEmployeeActiveTicketCount = (empId: string, empName: string) => {
@@ -343,43 +343,49 @@ export const TeamLeadDashboard: React.FC = () => {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {displayEmployees.map((emp, index) => {
-            const ticketCount = getEmployeeActiveTicketCount(emp.id, emp.name);
-            const isBusy = index === 2 || ticketCount >= 4;
-            const firstName = emp.name.split(' ')[0];
+        {displayEmployees.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-500 bg-slate-50/50 rounded-xl border border-slate-100">
+            No team members currently assigned.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {displayEmployees.map((emp, index) => {
+              const ticketCount = getEmployeeActiveTicketCount(emp.id, emp.name);
+              const isBusy = index === 2 || ticketCount >= 4;
+              const firstName = emp.name.split(' ')[0];
 
-            return (
-              <div
-                key={emp.id}
-                className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex items-start space-x-3"
-              >
-                <UserAvatar
-                  name={emp.name}
-                  avatar={emp.avatar}
-                  size="lg"
-                  className="mt-0.5"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900 truncate" title={emp.name}>
-                    {firstName}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">{ticketCount} Tickets</p>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        isBusy ? 'bg-amber-500' : 'bg-emerald-500'
-                      }`}
-                    />
-                    <span className="text-xs text-slate-600 font-medium">
-                      {isBusy ? 'Busy' : 'Available'}
-                    </span>
+              return (
+                <div
+                  key={emp.id}
+                  className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex items-start space-x-3"
+                >
+                  <UserAvatar
+                    name={emp.name}
+                    avatar={emp.avatar}
+                    size="lg"
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900 truncate" title={emp.name}>
+                      {firstName}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">{ticketCount} Tickets</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          isBusy ? 'bg-amber-500' : 'bg-emerald-500'
+                        }`}
+                      />
+                      <span className="text-xs text-slate-600 font-medium">
+                        {isBusy ? 'Busy' : 'Available'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 3. Tickets Needing Attention */}

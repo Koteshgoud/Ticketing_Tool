@@ -56,23 +56,16 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     } catch {}
 
     const session = getCurrentSessionUser();
-    const isTeamLeadPath = typeof window !== 'undefined' && (
-      window.location.pathname.startsWith('/teamlead') ||
-      location.pathname.startsWith('/teamlead') ||
-      window.location.hash.startsWith('#/teamlead')
-    );
-    const isEmployeePath = typeof window !== 'undefined' && (
-      window.location.pathname.startsWith('/employee') ||
-      location.pathname.startsWith('/employee') ||
-      window.location.hash.startsWith('#/employee')
-    );
     
+    // In the Admin Portal, she is the Admin, never a team member
     let roleLabel = 'Admin';
-    if (session?.role === 'teamlead' || isTeamLeadPath) {
+    if (session?.role === 'admin') {
+      roleLabel = 'Admin';
+    } else if (session?.role === 'teamlead') {
       roleLabel = 'Team Lead';
-    } else if (session?.role === 'employee' || isEmployeePath) {
+    } else if (session?.role === 'employee') {
       roleLabel = 'Employee';
-    } else if (session?.role === 'admin') {
+    } else {
       roleLabel = 'Admin';
     }
 
