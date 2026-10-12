@@ -111,16 +111,15 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  // Detect portal from prop, URL path, or search query parameter
+  // Public self-service signup is restricted to Admin. Team Lead & Employee accounts are provisioned by Administrator.
   const determineInitialPortal = (): UserRoleType => {
-    if (defaultPortal) return defaultPortal;
-    const path = location.pathname.toLowerCase();
     const params = new URLSearchParams(location.search);
-    const portalParam = params.get('portal')?.toLowerCase();
-
-    if (portalParam === 'admin' || path.includes('/admin')) return 'admin';
-    if (portalParam === 'teamlead' || path.includes('/teamlead')) return 'teamlead';
-    if (portalParam === 'employee' || path.includes('/employee')) return 'employee';
+    const token = params.get('token');
+    if (token) {
+      const portalParam = params.get('portal')?.toLowerCase() || params.get('role')?.toLowerCase();
+      if (portalParam === 'teamlead') return 'teamlead';
+      if (portalParam === 'employee') return 'employee';
+    }
     return 'admin';
   };
 
@@ -508,49 +507,20 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
 
         <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-xl">
           <div className="bg-white py-8 px-6 sm:px-10 shadow-sm border border-slate-200 rounded-2xl">
-          {/* Portal Switch Tabs */}
-          <div className="mb-6">
-            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-              Select Portal Type
-            </label>
-            <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100/80 rounded-xl border border-slate-200">
-              <button
-                type="button"
-                onClick={() => handlePortalSwitch('admin')}
-                className={`py-2 px-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activePortal === 'admin'
-                    ? PORTAL_CONFIGS.admin.activeTabClass
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>Admin</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePortalSwitch('teamlead')}
-                className={`py-2 px-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activePortal === 'teamlead'
-                    ? PORTAL_CONFIGS.teamlead.activeTabClass
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Team Lead</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePortalSwitch('employee')}
-                className={`py-2 px-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activePortal === 'employee'
-                    ? PORTAL_CONFIGS.employee.activeTabClass
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Employee</span>
-              </button>
+          {/* Admin Registration Banner */}
+          <div className="mb-6 p-3 rounded-xl bg-sky-50/70 border border-sky-100 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-sky-600 text-white shadow-2xs">
+                <Shield className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-900">Administrator Registration</div>
+                <div className="text-[11px] text-slate-500">System governance & configuration workspace</div>
+              </div>
             </div>
+            <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full border border-sky-200 uppercase">
+              Admin Only
+            </span>
           </div>
 
           {/* Active Portal Header Banner */}

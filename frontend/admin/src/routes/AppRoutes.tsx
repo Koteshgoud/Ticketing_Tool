@@ -111,12 +111,12 @@ export const AppRoutes: React.FC = () => {
       <Route path="/admin/signup" element={<AdminSignUpPage />} />
       <Route path="/admin/auth/signup" element={<AdminSignUpPage />} />
       <Route path="/admin/register" element={<AdminSignUpPage />} />
-      <Route path="/teamlead/signup" element={<TeamLeadSignUpPage />} />
-      <Route path="/teamlead/auth/signup" element={<TeamLeadSignUpPage />} />
-      <Route path="/teamlead/register" element={<TeamLeadSignUpPage />} />
-      <Route path="/employee/signup" element={<EmployeeSignUpPage />} />
-      <Route path="/employee/auth/signup" element={<EmployeeSignUpPage />} />
-      <Route path="/employee/register" element={<EmployeeSignUpPage />} />
+      <Route path="/teamlead/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/teamlead/auth/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/teamlead/register" element={<Navigate to="/login" replace />} />
+      <Route path="/employee/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/employee/auth/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/employee/register" element={<Navigate to="/login" replace />} />
       <Route path="/admin/auth/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/admin/auth/reset-password" element={<ResetPasswordPage />} />
 

@@ -177,13 +177,10 @@ export const EmployeeSignIn: React.FC = () => {
             </Button>
           </form>
 
-          {/* Sign-Up Link */}
+          {/* Account Notice */}
           <div className="mt-5 pt-4 border-t border-slate-100 text-center">
-            <p className="text-xs text-slate-600">
-              Don't have an employee account?{' '}
-              <Link to="/signup" className="font-bold text-[#0284C7] hover:underline">
-                Sign Up as Employee
-              </Link>
+            <p className="text-xs text-slate-500">
+              Employee accounts are provisioned by your organization administrator.
             </p>
           </div>
         </div>

@@ -382,7 +382,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-orange-600 leading-none">
-              {stats?.escalatedTickets || 8}
+              {stats?.escalatedTickets ?? tickets.filter(t => (t.status || '').toLowerCase() === 'escalated').length}
             </div>
             <p className="text-[11px] text-orange-600 mt-1 font-medium">Requires lead action</p>
           </div>
@@ -406,7 +406,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-amber-600 leading-none">
-              {stats?.slaRiskCount || 5}
+              {stats?.slaRiskCount ?? tickets.filter(t => (t.slaStatus || '').toLowerCase().includes('risk')).length}
             </div>
             <p className="text-[11px] text-amber-600 mt-1 font-medium">Approaching deadline</p>
           </div>
@@ -430,7 +430,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-red-600 leading-none">
-              {stats?.slaBreachedCount || 3}
+              {stats?.slaBreachedCount ?? tickets.filter(t => (t.slaStatus || '').toLowerCase().includes('breach')).length}
             </div>
             <p className="text-[11px] text-red-600 mt-1 font-medium">Critical overdue</p>
           </div>
