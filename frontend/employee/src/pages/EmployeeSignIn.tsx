@@ -59,7 +59,7 @@ export const EmployeeSignIn: React.FC = () => {
         .maybeSingle();
 
       if (error || !dbUser) {
-        setErrors({ auth: 'No account found with this email. Please sign up first.' });
+        setErrors({ auth: 'No account found with this email. Please contact your organization administrator.' });
         setIsSubmitting(false);
         return;
       }

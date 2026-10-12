@@ -336,6 +336,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
   // Switch Portal and update defaults
   const handlePortalSwitch = (portal: UserRoleType) => {
     if (isInviteVerified) return; // Locked to verified role
+    if (portal !== 'admin') return; // Team Lead and Employee cannot self-register without invitation
     setActivePortal(portal);
     setDepartment(PORTAL_CONFIGS[portal].departments[0]);
     setErrors({});
@@ -455,39 +456,9 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
             >
               Sign In
             </Link>
-            <button
-              type="button"
-              onClick={() => handlePortalSwitch('admin')}
-              className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                activePortal === 'admin'
-                  ? 'bg-sky-600 text-white shadow-xs'
-                  : 'bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5" /> Admin Portal
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePortalSwitch('teamlead')}
-              className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                activePortal === 'teamlead'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" /> Team Lead Portal
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePortalSwitch('employee')}
-              className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                activePortal === 'employee'
-                  ? 'bg-teal-600 text-white shadow-xs'
-                  : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5" /> Employee Portal
-            </button>
+            <span className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-50 text-sky-700 border border-sky-200">
+              <Shield className="w-3.5 h-3.5" /> Admin Registration
+            </span>
           </div>
         </div>
       </header>
@@ -498,10 +469,10 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
             <Ticket className="w-7 h-7" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Create Your Account
+            Administrator Registration
           </h1>
           <p className="text-xs sm:text-sm text-slate-500">
-            Select your designated portal below to configure your workspace credentials.
+            Configure system governance and administrator workspace credentials.
           </p>
         </div>
 

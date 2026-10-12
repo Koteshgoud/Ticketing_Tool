@@ -117,13 +117,20 @@ export function setSessionUser(user: AppUser | null): void {
   if (user) {
     localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(user));
     localStorage.removeItem('platform_explicitly_logged_out');
+    // Clear stale cached admin profile so this user's name and role appear correctly
+    localStorage.removeItem('admin_profile_data');
+    localStorage.removeItem('admin_profile_avatar');
     if (user.role === 'teamlead') {
       localStorage.setItem('itsm_teamlead_auth', 'true');
+    } else {
+      localStorage.removeItem('itsm_teamlead_auth');
     }
   } else {
     localStorage.removeItem(STORAGE_KEY_SESSION);
     localStorage.removeItem('itsm_teamlead_auth');
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('admin_profile_data');
+    localStorage.removeItem('admin_profile_avatar');
     localStorage.setItem('platform_explicitly_logged_out', 'true');
   }
 }
@@ -151,13 +158,23 @@ export async function loginUser(email: string, password?: string): Promise<{ suc
         return { success: false, error: 'Incorrect password. Please verify your credentials.' };
       }
 
+      let cleanRole: UserRoleType = 'employee';
+      const rawRole = (dbUser.role || '').toLowerCase();
+      if (rawRole.includes('admin')) {
+        cleanRole = 'admin';
+      } else if (rawRole.includes('lead') || rawRole.includes('teamlead')) {
+        cleanRole = 'teamlead';
+      } else {
+        cleanRole = 'employee';
+      }
+
       const appUser: AppUser = {
         id: dbUser.id,
         name: dbUser.name || cleanEmail.split('@')[0],
         email: dbUser.email,
         phone: dbUser.phone || '',
         department: dbUser.department || 'IT Support',
-        role: (dbUser.role || 'admin') as UserRoleType,
+        role: cleanRole,
         status: dbUser.status || 'Active',
       };
       setSessionUser(appUser);
