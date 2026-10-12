@@ -50,9 +50,20 @@ export const TeamTickets: React.FC = () => {
 
   // Synchronize URL query parameters (?filter=, ?status=, ?sla=)
   useEffect(() => {
-    const filterParam = searchParams.get('filter')?.toLowerCase();
-    const statusParam = searchParams.get('status')?.toLowerCase();
-    const slaParam = searchParams.get('sla')?.toLowerCase();
+    let filterParam = searchParams.get('filter')?.toLowerCase();
+    let statusParam = searchParams.get('status')?.toLowerCase();
+    let slaParam = searchParams.get('sla')?.toLowerCase();
+
+    if (!filterParam && !statusParam && !slaParam && typeof window !== 'undefined') {
+      const fullHash = window.location.hash || '';
+      const queryPart = fullHash.includes('?') ? fullHash.split('?')[1] : window.location.search;
+      if (queryPart) {
+        const urlParams = new URLSearchParams(queryPart.startsWith('?') ? queryPart : `?${queryPart}`);
+        filterParam = urlParams.get('filter')?.toLowerCase() || undefined;
+        statusParam = urlParams.get('status')?.toLowerCase() || undefined;
+        slaParam = urlParams.get('sla')?.toLowerCase() || undefined;
+      }
+    }
 
     if (filterParam) {
       if (filterParam === 'all') {
