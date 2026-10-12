@@ -136,7 +136,7 @@ export const EmployeeSignIn: React.FC = () => {
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-700">Password</label>
                 <Link
-                  to="/forgot-password"
+                  to={email.trim() ? `/forgot-password?email=${encodeURIComponent(email.trim())}&warning=true` : "/forgot-password"}
                   className="text-xs text-[#0284C7] hover:underline font-medium cursor-pointer"
                 >
                   Forgot Password?

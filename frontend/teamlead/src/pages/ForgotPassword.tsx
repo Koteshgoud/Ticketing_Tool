@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Mail, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Mail, ArrowLeft } from 'lucide-react';
 
 export const ForgotPassword: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const initialEmail = searchParams.get('email') || '';
+  const initialWarning = searchParams.get('warning') === 'true';
+
+  const [email, setEmail] = useState(initialEmail);
+  const [showWarning, setShowWarning] = useState(initialWarning);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -12,11 +16,11 @@ export const ForgotPassword: React.FC = () => {
     if (!email.trim()) return;
 
     setIsSubmitting(true);
-    // Simulating instant verification response aligned with restriction policy
+    // Instant verification response showing restriction alert
     setTimeout(() => {
       setIsSubmitting(false);
-      setNotice('Password reset request blocked: As stated above, self-service reset is restricted to HR and CEO/Admin accounts. Please contact HR or your system administrator.');
-    }, 400);
+      setShowWarning(true);
+    }, 250);
   };
 
   return (
@@ -39,16 +43,10 @@ export const ForgotPassword: React.FC = () => {
           Enter your email and we'll send you a reset link.
         </p>
 
-        {/* Restriction Alert Box */}
-        <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 mb-6 text-sm text-rose-600 leading-relaxed font-normal">
-          Password reset is restricted to HR and CEO/Admin accounts. For team lead password resets, please contact HR or your system administrator.
-        </div>
-
-        {/* Notice on submission */}
-        {notice && (
-          <div className="mb-6 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">{notice}</span>
+        {/* Restriction Alert Box: Appears when team lead tries to enter forgot password */}
+        {showWarning && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 mb-6 text-sm text-rose-600 leading-relaxed font-normal animate-in fade-in duration-200">
+            Password reset is restricted to HR and CEO/Admin accounts. For team lead password resets, please contact HR or your system administrator.
           </div>
         )}
 
@@ -66,10 +64,7 @@ export const ForgotPassword: React.FC = () => {
                 type="email"
                 required
                 value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (notice) setNotice(null);
-                }}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@company.com"
                 className="block w-full pl-10 pr-3.5 py-2.5 text-sm bg-[#EEF4FB] border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 focus:bg-white transition-all"
               />
