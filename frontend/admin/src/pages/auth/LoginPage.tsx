@@ -155,47 +155,23 @@ export const LoginPage: React.FC = () => {
                 Sign In
               </button>
               <Link
-                to="/signup"
+                to="/admin/signup"
                 className="py-2 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 hover:bg-white/60 flex items-center justify-center gap-1.5 transition-all"
               >
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                Sign Up / Register
+                Sign Up as Admin
               </Link>
             </div>
 
-            {/* Direct Portal Sign-Up Links Banner */}
-            <div className="mb-5 p-3 rounded-lg bg-sky-50/60 border border-sky-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                  Need an Account? Sign Up:
-                </span>
-                <Link to="/signup" className="text-[11px] font-bold text-sky-600 hover:underline">
-                  View All &rarr;
-                </Link>
+            {/* Admin Portal Sign-Up Links Banner */}
+            <div className="mb-5 p-3 rounded-xl bg-sky-50/60 border border-sky-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-sky-600 shrink-0" />
+                <span className="text-xs font-semibold text-slate-700">Need an Admin Account?</span>
               </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <Link
-                  to="/admin/signup"
-                  className="py-1.5 px-2 text-center rounded bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700 flex flex-col items-center justify-center gap-1 shadow-2xs"
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">Admin</span>
-                </Link>
-                <Link
-                  to="/teamlead/signup"
-                  className="py-1.5 px-2 text-center rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 flex flex-col items-center justify-center gap-1 shadow-2xs"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">Team Lead</span>
-                </Link>
-                <Link
-                  to="/employee/signup"
-                  className="py-1.5 px-2 text-center rounded bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700 flex flex-col items-center justify-center gap-1 shadow-2xs"
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  <span className="text-[11px]">Employee</span>
-                </Link>
-              </div>
+              <Link to="/admin/signup" className="text-xs font-bold text-sky-600 hover:text-sky-700 hover:underline">
+                Register as Admin &rarr;
+              </Link>
             </div>
 
           {successBanner && (
@@ -271,37 +247,17 @@ export const LoginPage: React.FC = () => {
             </Button>
           </form>
 
-          {/* Portal Sign-Up Navigation */}
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center space-y-3">
-            <p className="text-xs font-semibold text-slate-700">
-              New to the platform? Sign up for your portal:
+          {/* Admin Sign-Up Navigation */}
+          <div className="mt-6 pt-5 border-t border-slate-100 text-center space-y-2">
+            <p className="text-xs text-slate-500">
+              Team Lead and Employee accounts are provisioned by your system administrator.
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
+            <div>
               <Link
-                to="/admin/auth/signup"
-                className="px-2.5 py-1 text-xs font-semibold rounded-md bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 transition-colors"
-              >
-                Admin Sign-Up
-              </Link>
-              <Link
-                to="/teamlead/auth/signup"
-                className="px-2.5 py-1 text-xs font-semibold rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-colors"
-              >
-                Team Lead Sign-Up
-              </Link>
-              <Link
-                to="/employee/auth/signup"
-                className="px-2.5 py-1 text-xs font-semibold rounded-md bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 transition-colors"
-              >
-                Employee Sign-Up
-              </Link>
-            </div>
-            <div className="pt-0.5">
-              <Link
-                to="/signup"
+                to="/admin/signup"
                 className="text-xs font-semibold text-[#0284C7] hover:underline"
               >
-                Multi-Portal Registration &rarr;
+                Register as Administrator &rarr;
               </Link>
             </div>
           </div>

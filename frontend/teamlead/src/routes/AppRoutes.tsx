@@ -26,19 +26,19 @@ export const AppRoutes: React.FC = () => {
     <Routes>
       {/* Auth Routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<TeamLeadSignUp />} />
+      <Route path="/signup" element={<Navigate to="/login" replace />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/teamlead/signup" element={<TeamLeadSignUp />} />
+      <Route path="/teamlead/signup" element={<Navigate to="/login" replace />} />
 
-      {/* Root Redirect: localhost / opens Sign Up for unauthenticated users */}
+      {/* Root Redirect: localhost / opens Login for unauthenticated users */}
       <Route
         path="/"
         element={
           localStorage.getItem('itsm_teamlead_auth') === 'true' ? (
             <Navigate to="/teamlead/dashboard" replace />
           ) : (
-            <Navigate to="/signup" replace />
+            <Navigate to="/login" replace />
           )
         }
       />
@@ -83,7 +83,7 @@ export const AppRoutes: React.FC = () => {
           localStorage.getItem('itsm_teamlead_auth') === 'true' ? (
             <Navigate to="/teamlead/dashboard" replace />
           ) : (
-            <Navigate to="/signup" replace />
+            <Navigate to="/login" replace />
           )
         }
       />

@@ -42,18 +42,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
   });
 
   const [stats, setStats] = useState<{ escalated: number; slaRisk: number; slaBreached: number }>({
-    escalated: 8,
-    slaRisk: 5,
-    slaBreached: 3,
+    escalated: 0,
+    slaRisk: 0,
+    slaBreached: 0,
   });
 
   useEffect(() => {
     AdminApiService.getDashboardStats()
       .then((data) => {
         setStats({
-          escalated: data.escalatedTickets || 8,
-          slaRisk: data.slaRiskCount || 5,
-          slaBreached: data.slaBreachedCount || 3,
+          escalated: data.escalatedTickets ?? 0,
+          slaRisk: data.slaRiskCount ?? 0,
+          slaBreached: data.slaBreachedCount ?? 0,
         });
       })
       .catch(() => {});

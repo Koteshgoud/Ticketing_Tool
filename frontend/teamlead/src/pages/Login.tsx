@@ -174,13 +174,10 @@ export const Login: React.FC = () => {
             </button>
           </form>
 
-          {/* Sign Up Link */}
+          {/* Account Notice */}
           <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-            <p className="text-xs text-slate-600">
-              Don't have a team lead account?{' '}
-              <Link to="/signup" className="text-sky-600 hover:text-sky-700 font-semibold hover:underline">
-                Sign Up as Team Lead
-              </Link>
+            <p className="text-xs text-slate-500">
+              Team Lead accounts are provisioned by your system administrator.
             </p>
           </div>
         </div>

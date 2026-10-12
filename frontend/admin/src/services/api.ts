@@ -321,7 +321,7 @@ export const AdminApiService = {
           slaStatus: mapSlaStatus(t.sla_status),
           createdAt: t.created_at ? t.created_at.replace('T', ' ').slice(0, 16) : '',
           updatedAt: t.updated_at ? t.updated_at.replace('T', ' ').slice(0, 16) : '',
-          dueDate: calculateSLADeadline(t.created_at, t.priority, t.due_date),
+          dueDate: calculateSLADeadline(t.created_at, t.priority, t.sla_due_at || t.due_date),
           attachments: t.attachments || [],
         }));
 
@@ -370,7 +370,7 @@ export const AdminApiService = {
           slaStatus: mapSlaStatus(data.sla_status),
           createdAt: data.created_at ? data.created_at.replace('T', ' ').slice(0, 16) : '',
           updatedAt: data.updated_at ? data.updated_at.replace('T', ' ').slice(0, 16) : '',
-          dueDate: calculateSLADeadline(data.created_at, data.priority, data.due_date),
+          dueDate: calculateSLADeadline(data.created_at, data.priority, data.sla_due_at || data.due_date),
           attachments: data.attachments || [],
           history: (dbActivities || []).map((a: any) => ({
             id: a.id,
@@ -462,7 +462,7 @@ export const AdminApiService = {
       status: 'Open',
       assigned_agent: employeeSummary !== 'Unassigned' ? employeeSummary : 'Unassigned',
       assigned_by: teamLeadSummary,
-      due_date: calculatedDueDate,
+      sla_due_at: calculatedDueDate,
       sla_status: 'Within SLA',
       sla_remaining: '8h 00m remaining',
       departments: data.departments || [],
@@ -509,7 +509,9 @@ export const AdminApiService = {
     if (updates.priority) dbUpdates.priority = updates.priority;
     if (updates.assignedTo) dbUpdates.assigned_agent = updates.assignedTo;
     if (updates.department) dbUpdates.department = updates.department;
-    if (updates.dueDate) dbUpdates.due_date = updates.dueDate;
+    if (updates.dueDate) {
+      dbUpdates.sla_due_at = updates.dueDate;
+    }
 
     if (Object.keys(dbUpdates).length > 0) {
       const { error } = await supabase.from('tickets').update(dbUpdates).eq('id', ticketId);

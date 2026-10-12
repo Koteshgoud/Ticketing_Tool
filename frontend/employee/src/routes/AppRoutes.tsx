@@ -37,16 +37,16 @@ export const AppRoutes: React.FC = () => {
 
   return (
     <Routes>
-      {/* Root Route: localhost URL opens Sign Up page for unauthenticated users */}
+      {/* Root Route: localhost URL opens Sign In page for unauthenticated users */}
       <Route
         path="/"
-        element={auth ? <Navigate to="/dashboard" replace /> : <Navigate to="/signup" replace />}
+        element={auth ? <Navigate to="/dashboard" replace /> : <Navigate to="/signin" replace />}
       />
 
       {/* 1. Employee Auth Routes */}
       <Route path="/signin" element={<EmployeeSignIn />} />
       <Route path="/login" element={<Navigate to="/signin" replace />} />
-      <Route path="/signup" element={<EmployeeSignUp />} />
+      <Route path="/signup" element={<Navigate to="/signin" replace />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
@@ -72,7 +72,7 @@ export const AppRoutes: React.FC = () => {
       {/* Default Route */}
       <Route
         path="*"
-        element={auth ? <Navigate to="/dashboard" replace /> : <Navigate to="/signup" replace />}
+        element={auth ? <Navigate to="/dashboard" replace /> : <Navigate to="/signin" replace />}
       />
     </Routes>
   );
