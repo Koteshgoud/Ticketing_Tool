@@ -153,11 +153,17 @@ export const UserManagementPage: React.FC = () => {
       header: 'USER & EMAIL',
       cell: (row) => (
         <div className="flex items-center gap-3">
-          <img
-            src={row.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-            alt={row.name}
-            className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200"
-          />
+          {row.avatarUrl ? (
+            <img
+              src={row.avatarUrl}
+              alt={row.name}
+              className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200"
+            />
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-sky-100 text-[#0284C7] font-bold text-xs flex items-center justify-center ring-1 ring-sky-200 shrink-0">
+              {(row.name || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
           <div>
             <div className="font-bold text-slate-900 text-[13px]">{row.name}</div>
             <div className="text-[12px] text-slate-500">{row.email}</div>
