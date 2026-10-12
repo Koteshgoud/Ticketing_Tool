@@ -1,3 +1,5 @@
+import { OrganizationService } from './organizationService';
+
 export interface TeamLead {
   id: string;
   name: string;
@@ -28,49 +30,7 @@ export interface SentEmailNotification {
   status: 'DELIVERED';
 }
 
-// Master Team Lead Registry mapped by Department & Category
-export const REGISTERED_TEAM_LEADS: TeamLead[] = [
-  {
-    id: 'tl-sarah',
-    name: 'Sarah Connor',
-    email: 'sarah.connor@company.com',
-    department: 'IT Support',
-    role: 'IT Support Team Lead',
-    categories: ['IT Support', 'Hardware & Devices', 'Access & Permissions', 'Network & Connectivity', 'GlobalProtect VPN', 'Software License'],
-  },
-  {
-    id: 'tl-david',
-    name: 'David Miller',
-    email: 'david.miller@company.com',
-    department: 'Finance',
-    role: 'Finance Team Lead',
-    categories: ['Finance', 'Finance & Payroll', 'Billing', 'Expenses', 'Reimbursements', 'Procurement'],
-  },
-  {
-    id: 'tl-adi',
-    name: 'Adi',
-    email: 'adi.lead@company.com',
-    department: 'HR Operations',
-    role: 'HR Operations Team Lead',
-    categories: ['HR Operations', 'HR & Benefits', 'Health & Dental Insurance', 'Onboarding', 'HR'],
-  },
-  {
-    id: 'tl-mounika',
-    name: 'Mounika',
-    email: 'mounika.lead@company.com',
-    department: 'Facilities',
-    role: 'Facilities Team Lead',
-    categories: ['Facilities', 'Physical Security', 'Facilities & Building', 'Operations'],
-  },
-  {
-    id: 'tl-sudha',
-    name: 'Sudha',
-    email: 'sudha.lead@company.com',
-    department: 'General Administration',
-    role: 'General Administration Team Lead',
-    categories: ['General Administration', 'Administration', 'General'],
-  },
-];
+export const REGISTERED_TEAM_LEADS: TeamLead[] = [];
 
 const STORAGE_KEY_SENT_EMAILS = 'employee_sent_email_notifications';
 
@@ -79,45 +39,21 @@ export const EmailService = {
    * Find Team Lead for a single department name
    */
   findTeamLeadForDepartment(department: string, category?: string): TeamLead {
-    const deptNorm = (department || '').toLowerCase().trim();
-    const catNorm = (category || '').toLowerCase().trim();
-
-    // 1. Direct match on department name or alias
-    let match = REGISTERED_TEAM_LEADS.find((tl) => {
-      const tlDept = tl.department.toLowerCase();
-      return tlDept === deptNorm || deptNorm.includes(tlDept) || tlDept.includes(deptNorm);
-    });
-
-    if (match) return match;
-
-    // 2. Special aliases (e.g. Finance & Payroll -> Finance)
-    if (deptNorm.includes('finance')) {
-      match = REGISTERED_TEAM_LEADS.find((tl) => tl.department === 'Finance');
-      if (match) return match;
-    }
-    if (deptNorm.includes('it') || deptNorm.includes('tech')) {
-      match = REGISTERED_TEAM_LEADS.find((tl) => tl.department === 'IT Support');
-      if (match) return match;
-    }
-    if (deptNorm.includes('hr')) {
-      match = REGISTERED_TEAM_LEADS.find((tl) => tl.department === 'HR Operations');
-      if (match) return match;
-    }
-    if (deptNorm.includes('admin')) {
-      match = REGISTERED_TEAM_LEADS.find((tl) => tl.department === 'General Administration');
-      if (match) return match;
+    const orgLeads = OrganizationService.getTeamLeadsByDepartment(department);
+    if (orgLeads && orgLeads.length > 0) {
+      const first = orgLeads[0];
+      return {
+        id: first.id,
+        name: first.name,
+        email: first.email,
+        department: first.departmentName,
+        role: first.role,
+        categories: [first.departmentName],
+      };
     }
 
-    // 3. Category match fallback
-    if (catNorm) {
-      match = REGISTERED_TEAM_LEADS.find((tl) =>
-        tl.categories.some((c) => c.toLowerCase().includes(catNorm) || catNorm.includes(c.toLowerCase()))
-      );
-      if (match) return match;
-    }
-
-    // 4. Dynamic Team Lead for custom typed department (e.g. "Marketing")
-    const cleanName = department.trim() || 'General';
+    // Dynamic Team Lead for custom or unassigned department
+    const cleanName = (department || '').trim() || 'General';
     return {
       id: `tl-custom-${cleanName.toLowerCase().replace(/\s+/g, '-')}`,
       name: `${cleanName} Team Lead`,
