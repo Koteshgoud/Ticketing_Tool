@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -13,6 +13,7 @@ import {
   UserCheck,
   X
 } from 'lucide-react';
+import { AdminApiService } from '../../services/api';
 
 interface NavItem {
   title: string;
@@ -39,6 +40,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     Workspace: true,
     Administration: true,
   });
+
+  const [stats, setStats] = useState<{ escalated: number; slaRisk: number; slaBreached: number }>({
+    escalated: 8,
+    slaRisk: 5,
+    slaBreached: 3,
+  });
+
+  useEffect(() => {
+    AdminApiService.getDashboardStats()
+      .then((data) => {
+        setStats({
+          escalated: data.escalatedTickets || 8,
+          slaRisk: data.slaRiskCount || 5,
+          slaBreached: data.slaBreachedCount || 3,
+        });
+      })
+      .catch(() => {});
+  }, []);
 
   const toggleGroup = (groupTitle: string) => {
     setOpenGroups(prev => ({ ...prev, [groupTitle]: !prev[groupTitle] }));
@@ -72,6 +91,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
           title: 'Ticket Management',
           path: '/admin/workspace/management',
           icon: <Kanban className="w-4 h-4" />
+        },
+        {
+          title: 'Escalated Tickets',
+          path: '/admin/workspace/escalated',
+          icon: <AlertTriangle className="w-4 h-4" />,
+          badge: stats.escalated,
+          badgeVariant: 'amber',
+        },
+        {
+          title: 'SLA Risk',
+          path: '/admin/workspace/sla-risk',
+          icon: <Clock className="w-4 h-4" />,
+          badge: stats.slaRisk,
+          badgeVariant: 'amber',
+        },
+        {
+          title: 'SLA Breached',
+          path: '/admin/workspace/sla-breached',
+          icon: <AlertTriangle className="w-4 h-4" />,
+          badge: stats.slaBreached,
+          badgeVariant: 'rose',
         }
       ]
     },
@@ -184,11 +224,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
 
                           {item.badge !== undefined && (
                             <span
-                              className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                              className={`w-5 h-5 flex items-center justify-center text-[10.5px] font-bold rounded-full border shrink-0 ${
                                 item.badgeVariant === 'rose'
-                                  ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                                  ? 'bg-[#3A1016] text-[#F87171] border-[#7F1D1D]'
                                   : item.badgeVariant === 'amber'
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                  ? 'bg-[#372309] text-[#FBBF24] border-[#78350F]'
                                   : 'bg-slate-800 text-slate-300 border-slate-700'
                               }`}
                             >

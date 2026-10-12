@@ -287,24 +287,6 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                   <UserIcon className="w-3.5 h-3.5 text-slate-500" /> My Profile
                 </button>
                 <button
-                  onClick={() => { setShowProfileMenu(false); navigate('/teamlead/dashboard'); }}
-                  className="w-full text-left px-4 py-2 text-xs text-sky-700 hover:bg-sky-50 flex items-center gap-2 cursor-pointer font-semibold"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-sky-600" /> Team Lead Dashboard
-                </button>
-                <button
-                  onClick={() => { setShowProfileMenu(false); navigate('/admin/dashboard'); }}
-                  className="w-full text-left px-4 py-2 text-xs text-indigo-700 hover:bg-indigo-50 flex items-center gap-2 cursor-pointer font-semibold"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" /> Admin Dashboard
-                </button>
-                <button
-                  onClick={() => { setShowProfileMenu(false); navigate('/employee/dashboard'); }}
-                  className="w-full text-left px-4 py-2 text-xs text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer font-semibold"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Employee Dashboard
-                </button>
-                <button
                   onClick={() => { setShowProfileMenu(false); navigate('/admin/settings'); }}
                   className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
                 >
