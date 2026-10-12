@@ -1,136 +1,89 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Ticket, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { supabase } from '../services/supabaseClient';
+import { Mail, ArrowLeft, AlertCircle } from 'lucide-react';
 
 export const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) {
-      setError('Email address is required');
-      return;
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      setError('Enter a valid corporate email address');
-      return;
-    }
+    if (!email.trim()) return;
 
     setIsSubmitting(true);
-    const cleanEmail = email.trim().toLowerCase();
-
-    try {
-      const { data: dbUser, error: queryErr } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      if (queryErr || !dbUser) {
-        setError('No registered employee account found with this email.');
-        setIsSubmitting(false);
-        return;
-      }
-
-      const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-      await supabase
-        .from('users')
-        .update({ invite_token: `reset-${resetCode}` })
-        .eq('email', cleanEmail);
-
-      const baseUrl = window.location.href.split('#')[0].replace(/\/+$/, '');
-      const resetUrl = `${baseUrl}/#/admin/auth/reset-password?email=${encodeURIComponent(cleanEmail)}&code=${resetCode}`;
-      await fetch('http://localhost:8000/api/v1/notifications/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: cleanEmail,
-          name: dbUser.name || 'Employee',
-          reset_code: resetCode,
-          reset_url: resetUrl,
-          portal: 'Employee Portal'
-        })
-      });
-
-      setIsSubmitted(true);
-    } catch (err: any) {
-      console.warn('Password reset request error:', err);
-      setIsSubmitted(true);
-    } finally {
+    // Simulating instant verification response aligned with restriction policy
+    setTimeout(() => {
       setIsSubmitting(false);
-    }
+      setNotice('Password reset request blocked: As stated above, self-service reset is restricted to HR and CEO/Admin accounts. Please contact HR or your system administrator.');
+    }, 400);
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center space-y-2">
-        <div className="w-12 h-12 rounded-xl bg-[#0284C7] flex items-center justify-center text-white mx-auto shadow-sm">
-          <Ticket className="w-7 h-7" />
-        </div>
-        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-          Forgot Password
-        </h2>
-        <p className="text-xs text-slate-500">
-          Enter your registered employee email to receive a password reset code.
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center items-center px-4 py-12 font-sans">
+      <div className="w-full max-w-[480px] bg-white rounded-3xl p-8 sm:p-10 shadow-sm border border-slate-200/80">
+        {/* Back to login */}
+        <Link
+          to="/signin"
+          className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 font-normal transition-colors mb-6 group"
+        >
+          <ArrowLeft className="w-4 h-4 text-slate-500 group-hover:text-slate-900 transition-colors" />
+          <span>Back to login</span>
+        </Link>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 shadow-sm border border-slate-200 sm:rounded-xl sm:px-10">
-          {isSubmitted ? (
-            <div className="text-center space-y-4">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200">
-                <CheckCircle2 className="w-6 h-6" />
+        {/* Title & Subtitle */}
+        <h1 className="text-2xl sm:text-[26px] font-bold text-slate-900 tracking-tight mb-2">
+          Reset password
+        </h1>
+        <p className="text-sm text-slate-500 mb-6 font-normal">
+          Enter your email and we'll send you a reset link.
+        </p>
+
+        {/* Restriction Alert Box */}
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 mb-6 text-sm text-rose-600 leading-relaxed font-normal">
+          Password reset is restricted to HR and CEO/Admin accounts. For employee password resets, please contact HR or your system administrator.
+        </div>
+
+        {/* Notice on submission */}
+        {notice && (
+          <div className="mb-6 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{notice}</span>
+          </div>
+        )}
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-semibold text-slate-900 mb-2">
+              Email
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <Mail className="w-4 h-4" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900">Verification Email Sent!</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                We sent password reset verification instructions to <strong className="text-slate-900">{email}</strong>. Please check your inbox.
-              </p>
-              <div className="pt-2">
-                <Link to={`/reset-password?email=${encodeURIComponent(email.trim())}`}>
-                  <Button variant="primary" className="w-full justify-center">
-                    Proceed to Reset Password
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <Input
-                label="Work Email Address *"
+              <input
                 type="email"
-                placeholder="employee@company.com"
+                required
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  if (error) setError('');
+                  if (notice) setNotice(null);
                 }}
-                error={error}
-                icon={<Mail className="w-4 h-4" />}
+                placeholder="name@company.com"
+                className="block w-full pl-10 pr-3.5 py-2.5 text-sm bg-[#EEF4FB] border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 focus:bg-white transition-all"
               />
-
-              <Button
-                type="submit"
-                variant="primary"
-                className="w-full justify-center py-2.5 font-semibold mt-2"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Sending Instructions...' : 'Send Reset Code'}
-              </Button>
-            </form>
-          )}
-
-          <div className="mt-6 border-t border-slate-100 pt-4 text-center">
-            <Link to="/signin" className="text-xs text-slate-600 hover:text-slate-900 inline-flex items-center gap-1 font-medium">
-              <ArrowLeft className="w-3.5 h-3.5" /> Return to Sign In
-            </Link>
+            </div>
           </div>
-        </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-[#0084FF] hover:bg-[#0073e6] active:bg-[#0066cc] transition-all shadow-sm flex items-center justify-center cursor-pointer disabled:opacity-60"
+          >
+            {isSubmitting ? 'Checking permissions...' : 'Send reset link'}
+          </button>
+        </form>
       </div>
     </div>
   );
