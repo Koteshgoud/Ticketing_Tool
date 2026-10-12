@@ -49,7 +49,13 @@ export const AllTicketsPage: React.FC = () => {
     }
 
     if (statusFilter !== 'all') {
-      result = result.filter(t => t.status.toLowerCase() === statusFilter.toLowerCase());
+      if (statusFilter === 'unassigned') {
+        result = result.filter(
+          t => !t.assignedTo || t.assignedTo.trim() === '' || t.assignedTo.toLowerCase() === 'unassigned'
+        );
+      } else {
+        result = result.filter(t => t.status.toLowerCase() === statusFilter.toLowerCase());
+      }
     }
 
     if (priorityFilter !== 'all') {
@@ -188,6 +194,7 @@ export const AllTicketsPage: React.FC = () => {
               onChange={(e) => setStatusFilter(e.target.value)}
               options={[
                 { value: 'all', label: 'All Statuses' },
+                { value: 'unassigned', label: 'Unassigned' },
                 { value: 'open', label: 'Open' },
                 { value: 'in progress', label: 'In Progress' },
                 { value: 'escalated', label: 'Escalated' },

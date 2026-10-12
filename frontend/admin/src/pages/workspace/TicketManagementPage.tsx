@@ -54,10 +54,15 @@ export const TicketManagementPage: React.FC = () => {
     loadData();
   }, []);
 
+  const isTicketUnassigned = (t: Ticket) =>
+    !t.assignedTo ||
+    t.assignedTo.trim() === '' ||
+    t.assignedTo.toLowerCase() === 'unassigned';
+
   // Filter logic
   const filteredTickets = tickets.filter((t) => {
     // Queue Tabs filter
-    if (activeQueueTab === 'unassigned' && (t.assignedTo || t.status === 'Resolved' || t.status === 'Closed')) return false;
+    if (activeQueueTab === 'unassigned' && (!isTicketUnassigned(t) || t.status === 'Resolved' || t.status === 'Closed')) return false;
     if (activeQueueTab === 'in_progress' && t.status !== 'In Progress') return false;
     if (activeQueueTab === 'pending' && t.status !== 'Pending') return false;
     if (activeQueueTab === 'escalated' && t.status !== 'Escalated') return false;
@@ -76,7 +81,7 @@ export const TicketManagementPage: React.FC = () => {
       assigneeFilter === 'all'
         ? true
         : assigneeFilter === 'unassigned'
-        ? !t.assignedTo
+        ? isTicketUnassigned(t)
         : t.assignedTo?.toLowerCase() === assigneeFilter.toLowerCase();
     const matchesSla = slaFilter === 'all' || t.slaStatus.toLowerCase().replace(' ', '_') === slaFilter.toLowerCase();
 
@@ -84,7 +89,7 @@ export const TicketManagementPage: React.FC = () => {
   });
 
   // Count stats
-  const countUnassigned = tickets.filter((t) => !t.assignedTo && t.status !== 'Closed' && t.status !== 'Resolved').length;
+  const countUnassigned = tickets.filter((t) => isTicketUnassigned(t) && t.status !== 'Closed' && t.status !== 'Resolved').length;
   const countInProgress = tickets.filter((t) => t.status === 'In Progress').length;
   const countPending = tickets.filter((t) => t.status === 'Pending').length;
   const countEscalated = tickets.filter((t) => t.status === 'Escalated').length;

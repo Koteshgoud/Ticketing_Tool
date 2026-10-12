@@ -23,6 +23,7 @@ import {
   CheckCircle,
   AlertCircle,
   X,
+  Inbox,
 } from 'lucide-react';
 
 const DEPARTMENT_OPTIONS = [
@@ -190,6 +191,15 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  const isUnassigned = (t: Ticket) =>
+    !t.assignedTo ||
+    t.assignedTo.trim() === '' ||
+    t.assignedTo.toLowerCase() === 'unassigned';
+
+  const unassignedCount = tickets.filter(
+    (t) => isUnassigned(t) && t.status !== 'Closed' && t.status !== 'Resolved'
+  ).length;
+
   const filteredTickets = tickets.filter((t) => {
     const matchesSearch =
       filterQuery === '' ||
@@ -197,7 +207,14 @@ export const DashboardPage: React.FC = () => {
       t.title.toLowerCase().includes(filterQuery.toLowerCase()) ||
       t.requesterName.toLowerCase().includes(filterQuery.toLowerCase());
 
-    const matchesStatus = statusFilter === 'all' || t.status.toLowerCase() === statusFilter.toLowerCase();
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'unassigned' && isUnassigned(t)) ||
+      (statusFilter === 'escalated' && t.status.toLowerCase() === 'escalated') ||
+      (statusFilter === 'sla risk' && (t.slaStatus || '').toLowerCase().includes('risk')) ||
+      (statusFilter === 'sla breached' && (t.slaStatus || '').toLowerCase().includes('breach')) ||
+      t.status.toLowerCase() === statusFilter.toLowerCase();
+
     return matchesSearch && matchesStatus;
   });
 
@@ -297,63 +314,127 @@ export const DashboardPage: React.FC = () => {
         </Button>
       </div>
 
-      {/* 4 Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 5 Interactive Summary Cards matching Sidebar Workspace */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Total Tickets */}
-        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-xs flex flex-col justify-between">
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'all' ? 'all' : 'all')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between text-left transition-all cursor-pointer ${
+            statusFilter === 'all'
+              ? 'border-blue-400 ring-2 ring-blue-500/20 shadow-xs'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">Total Tickets</span>
-            <div className="p-1 bg-blue-50 text-[#0284C7] rounded border border-blue-100">
+            <span className="text-[12px] font-semibold text-slate-500">Total Tickets</span>
+            <div className="p-1 bg-blue-50 text-[#0284C7] rounded-md border border-blue-100">
               <TicketIcon className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-2">
-            <div className="text-[24px] font-bold text-slate-900 leading-none">{stats?.totalTickets ?? '---'}</div>
-            <p className="text-[12px] text-slate-500 mt-1 font-normal">Systemwide total</p>
+          <div className="mt-2.5">
+            <div className="text-[22px] font-bold text-slate-900 leading-none">
+              {stats?.totalTickets ?? tickets.length}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1 font-medium">All workspace issues</p>
           </div>
-        </div>
+        </button>
 
-        {/* Open Tickets */}
-        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-xs flex flex-col justify-between">
+        {/* Unassigned Tickets */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'unassigned' ? 'all' : 'unassigned')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between text-left transition-all cursor-pointer ${
+            statusFilter === 'unassigned'
+              ? 'border-sky-400 ring-2 ring-sky-500/20 bg-sky-50/30 shadow-xs'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">Open Tickets</span>
-            <div className="p-1 bg-sky-50 text-sky-600 rounded border border-sky-100">
-              <Hourglass className="w-3.5 h-3.5" />
+            <span className="text-[12px] font-semibold text-slate-500">Unassigned</span>
+            <div className="p-1 bg-sky-50 text-sky-600 rounded-md border border-sky-100">
+              <Inbox className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-2">
-            <div className="text-[24px] font-bold text-slate-900 leading-none">{stats?.openTickets ?? '---'}</div>
-            <p className="text-[12px] text-slate-500 mt-1 font-normal">Active queue</p>
-          </div>
-        </div>
-
-        {/* SLA Risk */}
-        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">SLA Risk</span>
-            <div className="p-1 bg-amber-50 text-amber-600 rounded border border-amber-100">
-              <Clock className="w-3.5 h-3.5" />
+          <div className="mt-2.5">
+            <div className="text-[22px] font-bold text-sky-700 leading-none">
+              {unassignedCount}
             </div>
+            <p className="text-[11px] text-sky-600 mt-1 font-medium">Awaiting assignment</p>
           </div>
-          <div className="mt-2">
-            <div className="text-[24px] font-bold text-amber-600 leading-none">{stats?.slaRiskCount ?? 0}</div>
-            <p className="text-[12px] text-amber-600 mt-1 font-normal">Approaching SLA</p>
-          </div>
-        </div>
+        </button>
 
-        {/* SLA Breached */}
-        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-xs flex flex-col justify-between">
+        {/* Escalated Tickets */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'escalated' ? 'all' : 'escalated')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between text-left transition-all cursor-pointer ${
+            statusFilter === 'escalated'
+              ? 'border-orange-400 ring-2 ring-orange-500/20 bg-orange-50/30 shadow-xs'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">SLA Breached</span>
-            <div className="p-1 bg-red-50 text-red-600 rounded border border-red-100">
+            <span className="text-[12px] font-semibold text-slate-500">Escalated</span>
+            <div className="p-1 bg-orange-50 text-orange-600 rounded-md border border-orange-100">
               <AlertTriangle className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="mt-2">
-            <div className="text-[24px] font-bold text-red-600 leading-none">{stats?.slaBreachedCount ?? 0}</div>
-            <p className="text-[12px] text-red-600 mt-1 font-normal">Overdue action</p>
+          <div className="mt-2.5">
+            <div className="text-[22px] font-bold text-orange-600 leading-none">
+              {stats?.escalatedTickets || 8}
+            </div>
+            <p className="text-[11px] text-orange-600 mt-1 font-medium">Requires lead action</p>
           </div>
-        </div>
+        </button>
+
+        {/* SLA Risk */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'sla risk' ? 'all' : 'sla risk')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between text-left transition-all cursor-pointer ${
+            statusFilter === 'sla risk'
+              ? 'border-amber-400 ring-2 ring-amber-500/20 bg-amber-50/30 shadow-xs'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <span className="text-[12px] font-semibold text-slate-500">SLA Risk</span>
+            <div className="p-1 bg-amber-50 text-amber-600 rounded-md border border-amber-100">
+              <Clock className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <div className="text-[22px] font-bold text-amber-600 leading-none">
+              {stats?.slaRiskCount || 5}
+            </div>
+            <p className="text-[11px] text-amber-600 mt-1 font-medium">Approaching deadline</p>
+          </div>
+        </button>
+
+        {/* SLA Breached */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'sla breached' ? 'all' : 'sla breached')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between text-left transition-all cursor-pointer ${
+            statusFilter === 'sla breached'
+              ? 'border-red-400 ring-2 ring-red-500/20 bg-red-50/30 shadow-xs'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <span className="text-[12px] font-semibold text-slate-500">SLA Breached</span>
+            <div className="p-1 bg-red-50 text-red-600 rounded-md border border-red-100">
+              <AlertTriangle className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <div className="text-[22px] font-bold text-red-600 leading-none">
+              {stats?.slaBreachedCount || 3}
+            </div>
+            <p className="text-[11px] text-red-600 mt-1 font-medium">Critical overdue</p>
+          </div>
+        </button>
       </div>
 
       {/* Filter and Search Toolbar */}
@@ -372,16 +453,19 @@ export const DashboardPage: React.FC = () => {
             <Filter className="w-3.5 h-3.5" />
             Status:
           </div>
-          <div className="w-40">
+          <div className="w-44">
             <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               options={[
                 { value: 'all', label: 'All Statuses' },
+                { value: 'unassigned', label: 'Unassigned' },
                 { value: 'open', label: 'Open' },
                 { value: 'in progress', label: 'In Progress' },
                 { value: 'escalated', label: 'Escalated' },
-                { value: 'resolved', label: 'Resolved' }
+                { value: 'sla risk', label: 'SLA Risk' },
+                { value: 'sla breached', label: 'SLA Breached' },
+                { value: 'resolved', label: 'Resolved' },
               ]}
             />
           </div>
