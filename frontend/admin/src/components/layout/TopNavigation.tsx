@@ -7,9 +7,6 @@ import {
   ChevronDown,
   ShieldCheck,
   LogOut,
-  Settings,
-  User as UserIcon,
-  Key,
   BellRing,
   Menu
 } from 'lucide-react';
@@ -262,20 +259,12 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center gap-2 p-1 pr-2 sm:pr-3 rounded-full bg-white border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-2xs shrink-0"
           >
-            {adminProfile.avatarUrl ? (
-              <img
-                src={adminProfile.avatarUrl}
-                alt={adminProfile.name}
-                className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
-              />
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-[#0284C7] text-white flex items-center justify-center font-bold text-xs shrink-0">
-                {adminProfile.name.charAt(0)}
-              </div>
-            )}
+            <div className="w-7 h-7 rounded-full bg-[#0284C7] text-white flex items-center justify-center font-bold text-xs shrink-0">
+              {adminProfile.name.charAt(0)}
+            </div>
             <div className="text-left hidden lg:block">
               <div className="text-xs font-semibold text-slate-800 leading-tight">{adminProfile.name}</div>
-              <div className="text-[10px] font-bold text-[#0284C7] flex items-center gap-1 uppercase tracking-wider">
+              <div className="text-[10.5px] font-bold text-[#0284C7] flex items-center gap-1 uppercase tracking-wider">
                 <ShieldCheck className="w-3 h-3 inline" /> {adminProfile.role}
               </div>
             </div>
@@ -292,12 +281,6 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
               </div>
 
               <div className="py-1">
-                <button
-                  onClick={() => { setShowProfileMenu(false); navigate(adminProfile.role === 'Team Lead' ? '/teamlead/profile' : '/admin/profile'); }}
-                  className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
-                >
-                  <UserIcon className="w-3.5 h-3.5 text-slate-500" /> My Profile
-                </button>
                 <button
                   onClick={() => { setShowProfileMenu(false); setShowNotifications(true); }}
                   className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
