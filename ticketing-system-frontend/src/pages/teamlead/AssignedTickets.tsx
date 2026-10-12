@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { useTickets } from '../../hooks/useTickets';
 import { useAuth } from '../../hooks/useAuth';
 import { AssignTicketModal } from '../../components/tickets/AssignTicketModal';
@@ -18,6 +18,7 @@ export const AssignedTickets: React.FC = () => {
   const { users } = useAuth();
   const navigate = useNavigate();
   const outletContext = useOutletContext<{ globalSearch?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState(outletContext?.globalSearch || '');
@@ -26,6 +27,29 @@ export const AssignedTickets: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [agentFilter, setAgentFilter] = useState('All');
   const [slaFilter, setSlaFilter] = useState('All');
+
+  // Synchronize activeTab with URL search params
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') || searchParams.get('filter') || searchParams.get('status');
+    if (tabParam) {
+      const lower = tabParam.toLowerCase().replace(/[-_]/g, ' ');
+      if (lower.includes('escalat')) {
+        setActiveTab('Escalated');
+      } else if (lower.includes('progress')) {
+        setActiveTab('In Progress');
+      } else if (lower.includes('open')) {
+        setActiveTab('Open');
+      } else if (lower.includes('pend')) {
+        setActiveTab('Pending');
+      } else if (lower.includes('resolv')) {
+        setActiveTab('Resolved');
+      } else if (lower.includes('clos')) {
+        setActiveTab('Closed');
+      } else if (lower.includes('all')) {
+        setActiveTab('All');
+      }
+    }
+  }, [searchParams]);
 
   const [assignModalTicket, setAssignModalTicket] = useState<Ticket | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -78,9 +102,10 @@ export const AssignedTickets: React.FC = () => {
     setAgentFilter('All');
     setSlaFilter('All');
     setCurrentPage(1);
+    setSearchParams({});
   };
 
-  const tabs = ['All', 'Open', 'Pending', 'Resolved', 'Closed', 'Escalated'];
+  const tabs = ['All', 'Open', 'In Progress', 'Pending', 'Escalated', 'Resolved', 'Closed'];
   const totalPages = Math.ceil(filteredTickets.length / itemsPerPage);
   const paginatedTickets = filteredTickets.slice(
     (currentPage - 1) * itemsPerPage,
@@ -111,7 +136,7 @@ export const AssignedTickets: React.FC = () => {
           const count =
             tab === 'All'
               ? assignedTickets.length
-              : assignedTickets.filter((t) => t.status === tab).length;
+              : assignedTickets.filter((t) => (t.status || '').toLowerCase() === tab.toLowerCase()).length;
 
           return (
             <button
@@ -119,6 +144,7 @@ export const AssignedTickets: React.FC = () => {
               onClick={() => {
                 setActiveTab(tab);
                 setCurrentPage(1);
+                setSearchParams({ tab: tab.toLowerCase().replace(/\s+/g, '-') });
               }}
               className={`px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all flex items-center space-x-2 cursor-pointer ${
                 activeTab === tab

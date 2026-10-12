@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTickets } from '../../hooks/useTickets';
 import { useAuth } from '../../hooks/useAuth';
 import { UserAvatar } from '../../components/common/UserAvatar';
 import { TicketDetailsModal } from '../../components/tickets/TicketDetailsModal';
 import { AddUserModal } from '../../components/users/AddUserModal';
 import { CreateTicketModal } from '../../components/tickets/CreateTicketModal';
-import { TicketPriority, TicketStatus } from '../../types/ticket';
+import { Ticket, TicketPriority, TicketStatus } from '../../types/ticket';
 import {
   Plus,
   UserPlus,
@@ -19,30 +19,37 @@ import {
 } from 'lucide-react';
 
 export const TeamLeadDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const { tickets, selectedTicket, setSelectedTicket } = useTickets();
   const { users } = useAuth();
 
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [isCreateTicketModalOpen, setIsCreateTicketModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [dashboardFilter, setDashboardFilter] = useState<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'>('All');
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Helper functions for ticket states
+  const isTicketUnassigned = (t: Ticket) =>
+    !t.assignedAgent ||
+    t.assignedAgent.trim() === '' ||
+    t.assignedAgent.toLowerCase() === 'unassigned' ||
+    t.assignedToType === 'unassigned';
+
+  const isTicketSLARisk = (t: Ticket) => {
+    const s = (t.slaStatus || '').toLowerCase();
+    return s.includes('risk') || s.includes('breach') || s.includes('approach');
+  };
+
   // 1. Calculate Summary Card Metrics
   const totalTickets = tickets.length;
-  const unassignedCount = tickets.filter(
-    (t) =>
-      !t.assignedAgent ||
-      t.assignedAgent === 'Unassigned' ||
-      t.assignedToType === 'unassigned'
-  ).length;
+  const unassignedCount = tickets.filter(isTicketUnassigned).length;
   const inProgressCount = tickets.filter((t) => t.status === 'In Progress').length;
-  const slaRiskCount = tickets.filter(
-    (t) => t.slaStatus === 'At Risk' || t.slaStatus === 'Breached'
-  ).length;
+  const slaRiskCount = tickets.filter(isTicketSLARisk).length;
 
   // 2. Prepare Team Members (Max 4 active employees)
   const employeeUsers = users.filter((u) => u.role === 'employee');
@@ -74,8 +81,38 @@ export const TeamLeadDashboard: React.FC = () => {
     )
     .slice(0, 5);
 
-  // 4. Recent Tickets (Latest 5 tickets)
-  const recentTickets = [...tickets]
+  // 4. Quick Filter Toolbar Pills and Filtered Recent Tickets
+  const quickFilterPills: Array<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'> = [
+    'All',
+    'Unassigned',
+    'In Progress',
+    'SLA Risk',
+    'Escalated'
+  ];
+
+  const getQuickFilterCount = (filter: 'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated') => {
+    switch (filter) {
+      case 'All':
+        return tickets.length;
+      case 'Unassigned':
+        return tickets.filter(isTicketUnassigned).length;
+      case 'In Progress':
+        return tickets.filter((t) => t.status === 'In Progress').length;
+      case 'SLA Risk':
+        return tickets.filter(isTicketSLARisk).length;
+      case 'Escalated':
+        return tickets.filter((t) => t.status === 'Escalated').length;
+    }
+  };
+
+  const filteredRecentTickets = [...tickets]
+    .filter((t) => {
+      if (dashboardFilter === 'Unassigned') return isTicketUnassigned(t);
+      if (dashboardFilter === 'In Progress') return t.status === 'In Progress';
+      if (dashboardFilter === 'SLA Risk') return isTicketSLARisk(t);
+      if (dashboardFilter === 'Escalated') return t.status === 'Escalated';
+      return true;
+    })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
@@ -176,76 +213,120 @@ export const TeamLeadDashboard: React.FC = () => {
           {/* Create Ticket Button */}
           <button
             onClick={() => setIsCreateTicketModalOpen(true)}
-            className="px-3.5 py-1.5 text-xs font-semibold text-[#0284C7] border border-[#0284C7] hover:bg-sky-50 bg-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-2xs"
+            className="h-9 px-3.5 text-xs font-semibold text-[#0284C7] border border-[#0284C7] hover:bg-sky-50 bg-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-2xs"
           >
             <Plus className="w-3.5 h-3.5" />
-            + Create Ticket
+            Create Ticket
           </button>
 
           {/* Add User Button */}
           <button
             onClick={() => setIsAddUserModalOpen(true)}
-            className="px-3.5 py-1.5 text-xs font-semibold bg-[#0284C7] hover:bg-[#0369a1] text-white rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+            className="h-9 px-3.5 text-xs font-semibold bg-[#0284C7] hover:bg-[#0369a1] text-white rounded-lg shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            + Add User
+            Add User
           </button>
         </div>
       </div>
 
-      {/* 1. Summary Cards - Matching Admin Dashboard 4-card grid */}
+      {/* 1. Summary Cards - Interactive Navigation Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">Total Tickets</span>
-            <div className="p-1.5 bg-blue-50 text-[#0284C7] rounded-lg border border-blue-100">
+        <button
+          type="button"
+          onClick={() => navigate('/teamlead/team-tickets?filter=all')}
+          className="bg-white border border-slate-200 hover:border-sky-300 hover:shadow-md rounded-xl p-4 shadow-xs flex flex-col justify-between text-left transition-all duration-150 group cursor-pointer"
+        >
+          <div className="flex items-start justify-between w-full">
+            <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-800 transition-colors">
+              Total Tickets
+            </span>
+            <div className="p-1.5 bg-blue-50 text-[#0284C7] rounded-lg border border-blue-100 group-hover:bg-blue-100/80 transition-colors">
               <TicketIcon className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2">
-            <p className="text-[26px] font-bold text-slate-900 leading-tight">{totalTickets}</p>
-            <p className="text-[11.5px] text-slate-400 mt-0.5">Department total</p>
+          <div className="mt-2 w-full">
+            <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-[#0284C7] transition-colors">
+              {totalTickets}
+            </p>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[11.5px] text-slate-400">Department total</span>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0284C7] group-hover:translate-x-0.5 transition-all" />
+            </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">Unassigned</span>
-            <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg border border-sky-100">
+        <button
+          type="button"
+          onClick={() => navigate('/teamlead/team-tickets?filter=unassigned')}
+          className="bg-white border border-slate-200 hover:border-sky-300 hover:shadow-md rounded-xl p-4 shadow-xs flex flex-col justify-between text-left transition-all duration-150 group cursor-pointer"
+        >
+          <div className="flex items-start justify-between w-full">
+            <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-800 transition-colors">
+              Unassigned
+            </span>
+            <div className="p-1.5 bg-sky-50 text-sky-600 rounded-lg border border-sky-100 group-hover:bg-sky-100/80 transition-colors">
               <Inbox className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2">
-            <p className="text-[26px] font-bold text-slate-900 leading-tight">{unassignedCount}</p>
-            <p className="text-[11.5px] text-slate-400 mt-0.5">Pending assignment</p>
+          <div className="mt-2 w-full">
+            <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-sky-600 transition-colors">
+              {unassignedCount}
+            </p>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[11.5px] text-slate-400">Pending assignment</span>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-600 group-hover:translate-x-0.5 transition-all" />
+            </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">In Progress</span>
-            <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100">
+        <button
+          type="button"
+          onClick={() => navigate('/teamlead/team-tickets?filter=in-progress')}
+          className="bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-md rounded-xl p-4 shadow-xs flex flex-col justify-between text-left transition-all duration-150 group cursor-pointer"
+        >
+          <div className="flex items-start justify-between w-full">
+            <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-800 transition-colors">
+              In Progress
+            </span>
+            <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 group-hover:bg-indigo-100/80 transition-colors">
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2">
-            <p className="text-[26px] font-bold text-slate-900 leading-tight">{inProgressCount}</p>
-            <p className="text-[11.5px] text-slate-400 mt-0.5">Active queue</p>
+          <div className="mt-2 w-full">
+            <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">
+              {inProgressCount}
+            </p>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[11.5px] text-slate-400">Active queue</span>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+            </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <span className="text-[13px] font-medium text-slate-500">SLA Risk</span>
-            <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg border border-rose-100">
+        <button
+          type="button"
+          onClick={() => navigate('/teamlead/team-tickets?filter=sla-risk')}
+          className="bg-white border border-slate-200 hover:border-rose-300 hover:shadow-md rounded-xl p-4 shadow-xs flex flex-col justify-between text-left transition-all duration-150 group cursor-pointer"
+        >
+          <div className="flex items-start justify-between w-full">
+            <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-800 transition-colors">
+              SLA Risk
+            </span>
+            <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg border border-rose-100 group-hover:bg-rose-100/80 transition-colors">
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2">
-            <p className="text-[26px] font-bold text-rose-600 leading-tight">{slaRiskCount}</p>
-            <p className="text-[11.5px] text-slate-400 mt-0.5">Approaching SLA</p>
+          <div className="mt-2 w-full">
+            <p className="text-[26px] font-bold text-rose-600 leading-tight">
+              {slaRiskCount}
+            </p>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[11.5px] text-slate-400">Approaching SLA</span>
+              <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
+            </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* 2. Team Members */}
@@ -359,16 +440,50 @@ export const TeamLeadDashboard: React.FC = () => {
 
       {/* 4. Recent Tickets */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-wider">
-            Recent Tickets
-          </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Recent Tickets
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Filter tickets directly or view all in department directory
+            </p>
+          </div>
           <Link
             to="/teamlead/team-tickets"
             className="text-xs text-[#0284C7] hover:text-[#0369a1] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
           >
             View All <ArrowRight className="w-3.5 h-3.5" />
           </Link>
+        </div>
+
+        {/* In-page Quick Filter Toolbar */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5">
+          {quickFilterPills.map((pill) => {
+            const count = getQuickFilterCount(pill);
+            const isActive = dashboardFilter === pill;
+            return (
+              <button
+                key={pill}
+                type="button"
+                onClick={() => setDashboardFilter(pill)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-[#0284C7] text-white shadow-2xs font-semibold'
+                    : 'bg-slate-100/90 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900 border border-slate-200/60'
+                }`}
+              >
+                <span>{pill}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    isActive ? 'bg-sky-950/30 text-white' : 'bg-white text-slate-600 border border-slate-200/70'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="overflow-x-auto w-full max-w-full min-w-0">
@@ -383,7 +498,7 @@ export const TeamLeadDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {recentTickets.map((t) => (
+              {filteredRecentTickets.map((t) => (
                 <tr key={t.id} className="hover:bg-slate-50/70 transition-colors">
                   <td className="py-2.5 px-3 font-mono font-semibold text-[#0284C7] text-xs whitespace-nowrap">{t.id}</td>
                   <td className="py-2.5 px-3 font-medium text-slate-900 truncate" title={t.subject}>
@@ -401,10 +516,10 @@ export const TeamLeadDashboard: React.FC = () => {
                   </td>
                 </tr>
               ))}
-              {recentTickets.length === 0 && (
+              {filteredRecentTickets.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-4 text-center text-xs text-slate-400">
-                    No recent tickets available
+                  <td colSpan={5} className="py-6 text-center text-xs text-slate-400">
+                    No tickets found for filter "{dashboardFilter}"
                   </td>
                 </tr>
               )}

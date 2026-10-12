@@ -210,18 +210,6 @@ export const Employees: React.FC = () => {
 
                     <td className="py-3 px-4 text-xs text-slate-700 whitespace-nowrap">{u.department || 'N/A'}</td>
 
-                    <td className="py-2 px-3 truncate min-w-0 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                          u.role === 'teamlead'
-                            ? 'bg-sky-100 text-sky-700 border border-sky-200'
-                            : 'bg-slate-100 text-slate-700 border border-slate-200'
-                        }`}
-                      >
-                        {u.role === 'teamlead' ? 'Team Lead' : 'Employee'}
-                      </span>
-                    </td>
-
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
