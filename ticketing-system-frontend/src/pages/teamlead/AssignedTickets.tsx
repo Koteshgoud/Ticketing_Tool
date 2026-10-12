@@ -30,7 +30,15 @@ export const AssignedTickets: React.FC = () => {
 
   // Synchronize activeTab with URL search params
   useEffect(() => {
-    const tabParam = searchParams.get('tab') || searchParams.get('filter') || searchParams.get('status');
+    let tabParam = searchParams.get('tab') || searchParams.get('filter') || searchParams.get('status');
+    if (!tabParam && typeof window !== 'undefined') {
+      const fullHash = window.location.hash || '';
+      const queryPart = fullHash.includes('?') ? fullHash.split('?')[1] : window.location.search;
+      if (queryPart) {
+        const urlParams = new URLSearchParams(queryPart.startsWith('?') ? queryPart : `?${queryPart}`);
+        tabParam = urlParams.get('tab') || urlParams.get('filter') || urlParams.get('status');
+      }
+    }
     if (tabParam) {
       const lower = tabParam.toLowerCase().replace(/[-_]/g, ' ');
       if (lower.includes('escalat')) {
