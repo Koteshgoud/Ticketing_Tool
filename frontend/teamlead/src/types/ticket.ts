@@ -7,7 +7,7 @@ export interface TicketComment {
   id: string;
   ticketId: string;
   authorName: string;
-  authorRole: 'teamlead' | 'employee' | 'agent';
+  authorRole: 'teamlead' | 'employee' | 'agent' | 'admin';
   authorAvatar?: string;
   message: string;
   createdAt: string;

@@ -40,12 +40,15 @@ export const Employees: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Team members strictly exclude admin users
+  const teamUsers = users.filter((u) => u.role !== 'admin');
+
   // Get unique departments for filter dropdown
   const departmentsList = Array.from(
-    new Set(users.map((u) => u.department).filter(Boolean))
+    new Set(teamUsers.map((u) => u.department).filter(Boolean))
   ) as string[];
 
-  const filteredUsers = users.filter((u) => {
+  const filteredUsers = teamUsers.filter((u) => {
     const matchesSearch =
       u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.id.toLowerCase().includes(search.toLowerCase()) ||

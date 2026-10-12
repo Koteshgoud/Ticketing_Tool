@@ -35,7 +35,7 @@ interface TicketContextType {
   updateStatus: (ticketId: string, status: TicketStatus) => void;
   assignAgent: (ticketId: string, agentId: string, agentName: string) => void;
   changePriority: (ticketId: string, priority: TicketPriority) => void;
-  addComment: (ticketId: string, authorName: string, authorRole: 'teamlead' | 'employee' | 'agent', message: string, isInternal?: boolean) => void;
+  addComment: (ticketId: string, authorName: string, authorRole: 'teamlead' | 'employee' | 'agent' | 'admin', message: string, isInternal?: boolean) => void;
   escalateTicket: (ticketId: string, reason: string, escalatedBy: string) => void;
   resolveTicket: (ticketId: string, resolutionSummary?: string) => void;
   addAttachment: (ticketId: string, attachment: { name: string; size: string }) => void;
@@ -297,7 +297,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addComment = (
     ticketId: string,
     authorName: string,
-    authorRole: 'teamlead' | 'employee' | 'agent',
+    authorRole: 'teamlead' | 'employee' | 'agent' | 'admin',
     message: string,
     isInternal: boolean = false
   ) => {
