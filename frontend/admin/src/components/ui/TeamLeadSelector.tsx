@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { UserCheck, X, Check, ShieldCheck } from 'lucide-react';
+import { OrganizationService } from '../../services/organizationService';
 
 export interface TeamLeadOption {
   id: string;
@@ -9,48 +10,26 @@ export interface TeamLeadOption {
   email: string;
 }
 
-export const TEAM_LEADS_REGISTRY: Record<string, TeamLeadOption[]> = {
-  'IT Support': [
-    { id: 'OKL001', name: 'Kotesh Goud', role: 'IT Support Team Lead', department: 'IT Support', email: 'kotesh1720@gmail.com' },
-    { id: 'OKL002', name: 'Kotesh Goud', role: 'IT Infrastructure Lead', department: 'IT Support', email: 'k.ananthu@oklut.com' },
-    { id: 'OKL003', name: 'Lahari Pedada', role: 'IT Operations Team Lead', department: 'IT Support', email: 'sudheshnasatyanarayana@gmail.com' },
-    { id: 'usr-1791223003549', name: 'Sumana Bharadwaj', role: 'IT Support Lead', department: 'IT Support', email: 'sumana@gmail.com' },
-  ],
-  'Finance': [
-    { id: 'tl-fin-1', name: 'David Miller', role: 'Finance Team Lead', department: 'Finance', email: 'david.miller@company.com' },
-    { id: 'tl-fin-2', name: 'Rachel Green', role: 'Payroll Lead', department: 'Finance', email: 'rachel.green@company.com' },
-  ],
-  'HR Operations': [
-    { id: 'tl-hr-1', name: 'Adi', role: 'HR Operations Team Lead', department: 'HR Operations', email: 'adi.hr@company.com' },
-    { id: 'tl-hr-2', name: 'Kotesh', role: 'Talent Acquisition Lead', department: 'HR Operations', email: 'kotesh.hr@company.com' },
-  ],
-  'Facilities': [
-    { id: 'tl-fac-1', name: 'Mounika', role: 'Facilities Team Lead', department: 'Facilities', email: 'mounika.fac@company.com' },
-    { id: 'tl-fac-2', name: 'Marcus Vance', role: 'Workplace Operations Lead', department: 'Facilities', email: 'marcus.vance@company.com' },
-  ],
-  'General Administration': [
-    { id: 'tl-adm-1', name: 'Sudha', role: 'General Admin Team Lead', department: 'General Administration', email: 'sudha.admin@company.com' },
-    { id: 'tl-adm-2', name: 'Elena Rostova', role: 'Corporate Admin Lead', department: 'General Administration', email: 'elena.rostova@company.com' },
-  ],
-};
+export const TEAM_LEADS_REGISTRY: Record<string, TeamLeadOption[]> = {};
 
 export function getAvailableTeamLeadsForDepartments(departments: string[]): TeamLeadOption[] {
   const leads: TeamLeadOption[] = [];
 
   departments.forEach((dept) => {
     const norm = dept.trim();
-    if (TEAM_LEADS_REGISTRY[norm]) {
+    if (TEAM_LEADS_REGISTRY[norm] && TEAM_LEADS_REGISTRY[norm].length > 0) {
       leads.push(...TEAM_LEADS_REGISTRY[norm]);
     } else {
-      // Dynamic lead for custom / unlisted departments
-      const customId = `tl-custom-${norm.toLowerCase().replace(/\s+/g, '-')}`;
-      leads.push({
-        id: customId,
-        name: `${norm} Team Lead`,
-        role: `${norm} Lead`,
-        department: norm,
-        email: `lead.${norm.toLowerCase().replace(/\s+/g, '')}@company.com`,
-      });
+      const orgLeads = OrganizationService.getTeamLeadsByDepartment(norm);
+      if (orgLeads && orgLeads.length > 0) {
+        leads.push(...orgLeads.map(l => ({
+          id: l.id,
+          name: l.name,
+          role: l.role,
+          department: l.departmentName,
+          email: l.email,
+        })));
+      }
     }
   });
 
@@ -73,7 +52,6 @@ export const TeamLeadSelector: React.FC<TeamLeadSelectorProps> = ({
   // Auto-select primary team lead for each selected department if none selected
   useEffect(() => {
     if (availableLeads.length > 0 && selectedTeamLeadIds.length === 0) {
-      // Pick first lead per department by default
       const defaultIds: string[] = [];
       const seenDepts = new Set<string>();
 
@@ -161,44 +139,50 @@ export const TeamLeadSelector: React.FC<TeamLeadSelectorProps> = ({
 
       {/* Available Team Leads grouped by department with Checkboxes */}
       <div className="space-y-2.5 pt-1">
-        {Object.entries(leadsByDept).map(([dept, leads]) => (
-          <div key={dept} className="bg-white p-3 rounded-xl border border-slate-200/70 space-y-2">
-            <div className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1">
-              {dept} Available Team Leads
-            </div>
+        {Object.keys(leadsByDept).length === 0 ? (
+          <div className="bg-white p-3 rounded-xl border border-slate-200/70 text-xs text-slate-500 italic text-center py-4">
+            No team leads currently available for selected departments.
+          </div>
+        ) : (
+          Object.entries(leadsByDept).map(([dept, leads]) => (
+            <div key={dept} className="bg-white p-3 rounded-xl border border-slate-200/70 space-y-2">
+              <div className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1">
+                {dept} Available Team Leads
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {leads.map((lead) => {
-                const isChecked = selectedTeamLeadIds.includes(lead.id);
-                return (
-                  <button
-                    key={lead.id}
-                    type="button"
-                    onClick={() => toggleLead(lead)}
-                    className={`flex items-center gap-2.5 p-2 px-3 rounded-lg border text-xs font-medium text-left transition-all cursor-pointer ${
-                      isChecked
-                        ? 'bg-sky-50/70 border-[#0284C7] text-slate-900 shadow-2xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}
-                  >
-                    <div
-                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                        isChecked ? 'bg-[#0284C7] border-[#0284C7] text-white' : 'border-slate-300 bg-white'
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {leads.map((lead) => {
+                  const isChecked = selectedTeamLeadIds.includes(lead.id);
+                  return (
+                    <button
+                      key={lead.id}
+                      type="button"
+                      onClick={() => toggleLead(lead)}
+                      className={`flex items-center gap-2.5 p-2 px-3 rounded-lg border text-xs font-medium text-left transition-all cursor-pointer ${
+                        isChecked
+                          ? 'bg-sky-50/70 border-[#0284C7] text-slate-900 shadow-2xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300'
                       }`}
                     >
-                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                    </div>
+                      <div
+                        className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                          isChecked ? 'bg-[#0284C7] border-[#0284C7] text-white' : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
 
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 truncate">{lead.name}</div>
-                      <div className="text-[10.5px] text-slate-500 font-medium truncate">{lead.role}</div>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 truncate">{lead.name}</div>
+                        <div className="text-[10.5px] text-slate-500 font-medium truncate">{lead.role}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );
