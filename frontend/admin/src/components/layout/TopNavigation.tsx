@@ -8,7 +8,8 @@ import {
   ShieldCheck,
   LogOut,
   BellRing,
-  Menu
+  Menu,
+  User as UserIcon
 } from 'lucide-react';
 import { logoutUser, getCurrentSessionUser } from '../../services/unifiedAuth';
 
@@ -281,6 +282,12 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
               </div>
 
               <div className="py-1">
+                <button
+                  onClick={() => { setShowProfileMenu(false); navigate(adminProfile.role === 'Team Lead' ? '/teamlead/profile' : '/admin/profile'); }}
+                  className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
+                >
+                  <UserIcon className="w-3.5 h-3.5 text-slate-500" /> My Profile
+                </button>
                 <button
                   onClick={() => { setShowProfileMenu(false); setShowNotifications(true); }}
                   className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
