@@ -209,16 +209,78 @@ export const DashboardPage: React.FC = () => {
 
     const matchesStatus =
       statusFilter === 'all' ||
-      (statusFilter === 'unassigned' && isUnassigned(t)) ||
-      (statusFilter === 'escalated' && t.status.toLowerCase() === 'escalated') ||
+      (statusFilter === 'unassigned' && isUnassigned(t) && t.status !== 'Closed' && t.status !== 'Resolved') ||
+      (statusFilter === 'escalated' && (t.status || '').toLowerCase() === 'escalated') ||
       (statusFilter === 'sla risk' && (t.slaStatus || '').toLowerCase().includes('risk')) ||
       (statusFilter === 'sla breached' && (t.slaStatus || '').toLowerCase().includes('breach')) ||
-      t.status.toLowerCase() === statusFilter.toLowerCase();
+      (t.status || '').toLowerCase() === statusFilter.toLowerCase();
 
     return matchesSearch && matchesStatus;
   });
 
-  const recentTickets = filteredTickets.slice(0, 5);
+  const getTableInfo = () => {
+    switch (statusFilter.toLowerCase()) {
+      case 'unassigned':
+        return {
+          title: 'Unassigned Tickets',
+          icon: Inbox,
+          iconColor: 'text-sky-600',
+          badgeVariant: 'warning' as const,
+        };
+      case 'escalated':
+        return {
+          title: 'Escalated Tickets',
+          icon: AlertTriangle,
+          iconColor: 'text-orange-600',
+          badgeVariant: 'danger' as const,
+        };
+      case 'sla risk':
+        return {
+          title: 'SLA Risk Tickets',
+          icon: Clock,
+          iconColor: 'text-amber-600',
+          badgeVariant: 'warning' as const,
+        };
+      case 'sla breached':
+        return {
+          title: 'SLA Breached Tickets',
+          icon: AlertTriangle,
+          iconColor: 'text-red-600',
+          badgeVariant: 'danger' as const,
+        };
+      case 'open':
+        return {
+          title: 'Open Tickets',
+          icon: TicketIcon,
+          iconColor: 'text-blue-600',
+          badgeVariant: 'info' as const,
+        };
+      case 'in progress':
+        return {
+          title: 'In Progress Tickets',
+          icon: Clock,
+          iconColor: 'text-indigo-600',
+          badgeVariant: 'info' as const,
+        };
+      case 'resolved':
+        return {
+          title: 'Resolved Tickets',
+          icon: CheckCircle,
+          iconColor: 'text-emerald-600',
+          badgeVariant: 'success' as const,
+        };
+      default:
+        return {
+          title: 'Total Tickets',
+          icon: TicketIcon,
+          iconColor: 'text-[#0284C7]',
+          badgeVariant: 'neutral' as const,
+        };
+    }
+  };
+
+  const tableInfo = getTableInfo();
+  const TableTitleIcon = tableInfo.icon;
 
   const ticketColumns: Column<Ticket>[] = [
     {
@@ -226,7 +288,7 @@ export const DashboardPage: React.FC = () => {
       accessorKey: 'ticketNumber',
       cell: (row) => (
         <button
-          onClick={() => navigate('/admin/workspace/all')}
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
           className="font-mono text-[#0284C7] font-semibold text-[12.5px] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
           title="Click to view ticket details"
         >
@@ -319,7 +381,7 @@ export const DashboardPage: React.FC = () => {
         {/* Total Tickets */}
         <button
           type="button"
-          onClick={() => setStatusFilter(statusFilter === 'all' ? 'all' : 'all')}
+          onClick={() => setStatusFilter('all')}
           className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between text-left transition-all cursor-pointer ${
             statusFilter === 'all'
               ? 'border-blue-400 ring-2 ring-blue-500/20 shadow-xs'
@@ -441,7 +503,7 @@ export const DashboardPage: React.FC = () => {
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="w-full sm:w-72">
           <Input
-            placeholder="Filter recent tickets..."
+            placeholder={`Filter ${tableInfo.title.toLowerCase()}...`}
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             icon={<Search className="w-3.5 h-3.5 text-slate-400" />}
@@ -451,20 +513,20 @@ export const DashboardPage: React.FC = () => {
         <div className="w-full sm:w-auto flex items-center gap-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 shrink-0">
             <Filter className="w-3.5 h-3.5" />
-            Status:
+            Category:
           </div>
-          <div className="w-44">
+          <div className="w-48">
             <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               options={[
-                { value: 'all', label: 'All Statuses' },
-                { value: 'unassigned', label: 'Unassigned' },
+                { value: 'all', label: 'Total Tickets (All)' },
+                { value: 'unassigned', label: 'Unassigned Tickets' },
+                { value: 'escalated', label: 'Escalated Tickets' },
+                { value: 'sla risk', label: 'SLA Risk Tickets' },
+                { value: 'sla breached', label: 'SLA Breached Tickets' },
                 { value: 'open', label: 'Open' },
                 { value: 'in progress', label: 'In Progress' },
-                { value: 'escalated', label: 'Escalated' },
-                { value: 'sla risk', label: 'SLA Risk' },
-                { value: 'sla breached', label: 'SLA Breached' },
                 { value: 'resolved', label: 'Resolved' },
               ]}
             />
@@ -472,26 +534,35 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Tickets Table Section */}
+      {/* Dynamic Tickets Table Section */}
       <Card
         headerClassName="px-5 py-3.5 bg-slate-50/50 border-b border-slate-200"
         bodyClassName="p-0"
         title={
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-[#0284C7]" />
-            <span className="text-base font-semibold text-slate-900">Recent Tickets</span>
-            <Badge variant="neutral" className="text-[11px] py-0.5 px-2">
-              {recentTickets.length} recent
+          <div className="flex items-center gap-2 flex-wrap">
+            <TableTitleIcon className={`w-4 h-4 ${tableInfo.iconColor}`} />
+            <span className="text-base font-semibold text-slate-900">{tableInfo.title}</span>
+            <Badge variant={tableInfo.badgeVariant} className="text-[11px] py-0.5 px-2">
+              {filteredTickets.length} {filteredTickets.length === 1 ? 'ticket' : 'tickets'}
             </Badge>
+            {statusFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className="text-xs text-[#0284C7] hover:underline font-medium ml-2 cursor-pointer"
+              >
+                (Show All)
+              </button>
+            )}
           </div>
         }
       >
         <Table
           columns={ticketColumns}
-          data={recentTickets}
+          data={filteredTickets}
           keyExtractor={(row) => row.id}
           isLoading={isLoading}
-          emptyMessage="No tickets matched your filter criteria."
+          emptyMessage={`No ${tableInfo.title.toLowerCase()} match your criteria.`}
           compact
         />
       </Card>
