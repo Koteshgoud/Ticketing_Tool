@@ -127,7 +127,10 @@ export const AppRoutes: React.FC = () => {
       <Route path="/employee/auth/signup" element={<Navigate to="/login" replace />} />
       <Route path="/employee/register" element={<Navigate to="/login" replace />} />
       <Route path="/admin/auth/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/admin/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/admin/auth/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Admin Protected Layout Routes */}
       <Route

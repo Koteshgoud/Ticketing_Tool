@@ -113,7 +113,7 @@ export const Login: React.FC = () => {
                   Password <span className="text-red-500">*</span>
                 </label>
                 <Link
-                  to="/forgot-password"
+                  to={email.trim() ? `/forgot-password?email=${encodeURIComponent(email.trim())}&warning=true` : "/forgot-password"}
                   className="text-xs text-sky-600 hover:text-sky-700 font-medium cursor-pointer"
                 >
                   Forgot password?
