@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
-import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, UserCheck, Users, Shield, CheckCircle2 } from 'lucide-react';
+import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { loginUser, getCurrentSessionUser } from '../../services/unifiedAuth';
@@ -96,36 +96,9 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <Link
-              to="/login"
-              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-900 text-white shadow-xs"
-            >
-              Sign In
-            </Link>
-            <Link
-              to="/admin/signup"
-              className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 transition-colors"
-            >
-              <Shield className="w-3.5 h-3.5" /> Admin Sign-Up
-            </Link>
-            <Link
-              to="/teamlead/signup"
-              className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-colors"
-            >
-              <Users className="w-3.5 h-3.5" /> Team Lead Sign-Up
-            </Link>
-            <Link
-              to="/employee/signup"
-              className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 transition-colors"
-            >
-              <UserCheck className="w-3.5 h-3.5" /> Employee Sign-Up
-            </Link>
-            <Link
-              to="/signup"
-              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[#0284C7] text-white hover:bg-[#0369a1] shadow-xs"
-            >
-              All Sign-Up Pages &rarr;
-            </Link>
+            <span className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+              Workspace Sign In
+            </span>
           </div>
         </div>
       </header>
@@ -139,41 +112,12 @@ export const LoginPage: React.FC = () => {
             Sign In to Workspace
           </h2>
           <p className="text-xs text-slate-500">
-            Access your portal dashboard or choose a portal below to sign up.
+            Enter your credentials to access your portal dashboard.
           </p>
         </div>
 
         <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
           <div className="bg-white py-8 px-6 shadow-sm border border-slate-200 sm:rounded-xl sm:px-10">
-            {/* Primary Mode Toggle: Sign In vs Sign Up */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 mb-5">
-              <button
-                type="button"
-                className="py-2 text-xs font-bold rounded-md bg-white text-slate-900 shadow-xs border border-slate-200 flex items-center justify-center gap-1.5"
-              >
-                <Lock className="w-3.5 h-3.5 text-sky-600" />
-                Sign In
-              </button>
-              <Link
-                to="/admin/signup"
-                className="py-2 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 hover:bg-white/60 flex items-center justify-center gap-1.5 transition-all"
-              >
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                Sign Up as Admin
-              </Link>
-            </div>
-
-            {/* Admin Portal Sign-Up Links Banner */}
-            <div className="mb-5 p-3 rounded-xl bg-sky-50/60 border border-sky-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-sky-600 shrink-0" />
-                <span className="text-xs font-semibold text-slate-700">Need an Admin Account?</span>
-              </div>
-              <Link to="/admin/signup" className="text-xs font-bold text-sky-600 hover:text-sky-700 hover:underline">
-                Register as Admin &rarr;
-              </Link>
-            </div>
-
           {successBanner && (
             <div className="mb-4 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -247,19 +191,11 @@ export const LoginPage: React.FC = () => {
             </Button>
           </form>
 
-          {/* Admin Sign-Up Navigation */}
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center space-y-2">
+          {/* Account Provisioning Notice */}
+          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
             <p className="text-xs text-slate-500">
               Team Lead and Employee accounts are provisioned by your system administrator.
             </p>
-            <div>
-              <Link
-                to="/admin/signup"
-                className="text-xs font-semibold text-[#0284C7] hover:underline"
-              >
-                Register as Administrator &rarr;
-              </Link>
-            </div>
           </div>
         </div>
 

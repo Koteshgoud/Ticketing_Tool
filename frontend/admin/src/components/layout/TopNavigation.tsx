@@ -58,21 +58,33 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     } catch {}
 
     const session = getCurrentSessionUser();
-    const isTeamLeadPath = typeof window !== 'undefined' && (window.location.pathname.startsWith('/teamlead') || location.pathname.startsWith('/teamlead'));
-    const isEmployeePath = typeof window !== 'undefined' && (window.location.pathname.startsWith('/employee') || location.pathname.startsWith('/employee'));
+    const isTeamLeadPath = typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/teamlead') ||
+      location.pathname.startsWith('/teamlead') ||
+      window.location.hash.startsWith('#/teamlead')
+    );
+    const isEmployeePath = typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/employee') ||
+      location.pathname.startsWith('/employee') ||
+      window.location.hash.startsWith('#/employee')
+    );
     
     let roleLabel = 'Admin';
-    if (isTeamLeadPath) {
+    if (session?.role === 'teamlead' || isTeamLeadPath) {
       roleLabel = 'Team Lead';
-    } else if (isEmployeePath) {
+    } else if (session?.role === 'employee' || isEmployeePath) {
       roleLabel = 'Employee';
-    } else if (session?.role === 'teamlead') {
-      roleLabel = 'Team Lead';
-    } else if (session?.role === 'employee') {
-      roleLabel = 'Employee';
+    } else if (session?.role === 'admin') {
+      roleLabel = 'Admin';
     }
 
-    const fallbackName = session?.name || 'Sudheshna Bharadwaj';
+    if (session && session.name) {
+      return {
+        name: session.name,
+        avatarUrl: session.avatarUrl || localStorage.getItem('admin_profile_avatar') || '',
+        role: roleLabel,
+      };
+    }
 
     try {
       const cached = localStorage.getItem('admin_profile_data');
@@ -89,7 +101,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     } catch {}
 
     return {
-      name: fallbackName,
+      name: session?.name || 'Admin User',
       avatarUrl: localStorage.getItem('admin_profile_avatar') || session?.avatarUrl || '',
       role: roleLabel,
     };
@@ -300,7 +312,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                 onClick={() => {
                   setShowProfileMenu(false);
                   logoutUser();
-                  navigate('/signup');
+                  navigate('/login');
                 }}
                 className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer font-semibold"
               >

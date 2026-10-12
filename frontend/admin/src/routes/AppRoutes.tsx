@@ -59,12 +59,21 @@ import { getCurrentSessionUser } from '../services/unifiedAuth';
 
 /**
  * Root Landing Route:
- * When an unauthenticated user opens the localhost URL (/),
- * the first page MUST be the Sign Up / Registration page (/signup).
- * If already authenticated, redirect to their role-specific dashboard.
+ * If authenticated, redirect to their role-specific dashboard.
+ * If unauthenticated, redirect to the Login page (/login).
  */
 const RootRedirect: React.FC = () => {
-  return <Navigate to="/signup" replace />;
+  const user = getCurrentSessionUser();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  if (user.role === 'teamlead') {
+    return <Navigate to="/teamlead/dashboard" replace />;
+  }
+  if (user.role === 'employee') {
+    return <Navigate to="/employee/dashboard" replace />;
+  }
+  return <Navigate to="/admin/dashboard" replace />;
 };
 
 
@@ -90,7 +99,7 @@ const DashboardRedirect: React.FC = () => {
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
-      {/* Root: localhost URL opens Sign Up page for unauthenticated users */}
+      {/* Root: localhost URL opens Login page for unauthenticated users */}
       <Route path="/" element={<RootRedirect />} />
       <Route path="/dashboard" element={<DashboardRedirect />} />
 
@@ -105,9 +114,9 @@ export const AppRoutes: React.FC = () => {
       <Route path="/employee/auth/login" element={<Navigate to="/login" replace />} />
       <Route path="/kind-of-work" element={<KindOfWorkPage />} />
 
-      {/* Multi-Portal Sign-Up & Registration Routes */}
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/register" element={<SignupPage />} />
+      {/* Admin Sign-Up & Registration Routes (Team Lead and Employee sign-up disabled) */}
+      <Route path="/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route path="/admin/signup" element={<AdminSignUpPage />} />
       <Route path="/admin/auth/signup" element={<AdminSignUpPage />} />
       <Route path="/admin/register" element={<AdminSignUpPage />} />

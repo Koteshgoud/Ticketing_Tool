@@ -159,13 +159,18 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
 
         {/* Bottom Sign Out */}
         <div className="p-3 border-t border-slate-800/80 bg-[#0B1120]">
-          <NavLink
-            to="/signup"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/60 transition-colors"
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.removeItem('platform_current_user');
+              localStorage.setItem('platform_explicitly_logged_out', 'true');
+              window.location.hash = '#/signin';
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/60 transition-colors cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Sign Out</span>
-          </NavLink>
+          </button>
         </div>
       </aside>
     </>

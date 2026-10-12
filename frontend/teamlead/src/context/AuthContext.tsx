@@ -130,7 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
 
       if (error || !dbUser) {
-        return { success: false, error: 'No account found with this email. Please register first.' };
+        return { success: false, error: 'No account found with this email. Please contact your administrator.' };
       }
 
       const validPass = dbUser.password === password || (!dbUser.password && password === 'Password123');
@@ -138,12 +138,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'Incorrect password. Please verify your credentials.' };
       }
 
+      let cleanRole: UserRole = 'teamlead';
+      const rawRole = (dbUser.role || '').toLowerCase();
+      if (rawRole.includes('lead') || rawRole.includes('teamlead') || rawRole.includes('admin')) {
+        cleanRole = 'teamlead';
+      } else {
+        cleanRole = 'employee';
+      }
+
       const appUser: User = {
         id: dbUser.id,
         name: dbUser.name || cleanEmail.split('@')[0],
         email: dbUser.email,
         phone: dbUser.phone || '',
-        role: (dbUser.role === 'teamlead' ? 'teamlead' : 'employee'),
+        role: cleanRole,
         department: dbUser.department || 'IT Operations',
         status: (dbUser.status === 'Inactive' ? 'Inactive' : 'Active'),
       };
@@ -164,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('platform_current_user');
     localStorage.setItem('platform_explicitly_logged_out', 'true');
     if (typeof window !== 'undefined') {
-      window.location.hash = '#/signup';
+      window.location.hash = '#/login';
     }
   };
 
