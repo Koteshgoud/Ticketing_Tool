@@ -10,6 +10,40 @@ function mapSlaStatus(raw?: string): SLAStatus {
   return 'Normal';
 }
 
+export function calculateSLADeadline(createdAtStr?: string, priority?: string, explicitDueDate?: string): string {
+  if (explicitDueDate && explicitDueDate.trim() && explicitDueDate.length >= 10) {
+    const cleanDue = explicitDueDate.replace('T', ' ').slice(0, 16);
+    const cleanCreated = (createdAtStr || '').replace('T', ' ').slice(0, 16);
+    if (cleanDue !== cleanCreated) {
+      return cleanDue;
+    }
+  }
+  if (!createdAtStr) {
+    const now = new Date();
+    const prio = (priority || '').toLowerCase();
+    const hours = prio === 'urgent' ? 4 : prio === 'high' ? 24 : prio === 'low' ? 72 : 48;
+    const deadline = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    return `${deadline.getFullYear()}-${String(deadline.getMonth() + 1).padStart(2, '0')}-${String(deadline.getDate()).padStart(2, '0')} ${String(deadline.getHours()).padStart(2, '0')}:${String(deadline.getMinutes()).padStart(2, '0')}`;
+  }
+
+  const createdTime = new Date(createdAtStr.includes(' ') && !createdAtStr.includes('T') ? createdAtStr.replace(' ', 'T') : createdAtStr);
+  const validCreated = isNaN(createdTime.getTime()) ? new Date() : createdTime;
+
+  const prio = (priority || '').toLowerCase();
+  let hoursToAdd = 48; // default Medium
+  if (prio === 'urgent') hoursToAdd = 4;
+  else if (prio === 'high') hoursToAdd = 24;
+  else if (prio === 'low') hoursToAdd = 72;
+
+  const deadline = new Date(validCreated.getTime() + hoursToAdd * 60 * 60 * 1000);
+  const yyyy = deadline.getFullYear();
+  const mm = String(deadline.getMonth() + 1).padStart(2, '0');
+  const dd = String(deadline.getDate()).padStart(2, '0');
+  const hh = String(deadline.getHours()).padStart(2, '0');
+  const min = String(deadline.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
 // Compatibility empty exports (no mock data used)
 export const mockUsers: User[] = [];
 export const mockTickets: Ticket[] = [];
@@ -204,6 +238,35 @@ export const AdminApiService = {
     return { success: true };
   },
 
+  async updateUser(userId: string, data: { name?: string; email?: string; department?: string; role?: string; status?: string }) {
+    const dbUpdates: Record<string, any> = {};
+    if (data.name) dbUpdates.name = data.name;
+    if (data.email) dbUpdates.email = data.email.trim().toLowerCase();
+    if (data.department) dbUpdates.department = data.department;
+    if (data.role) {
+      const lower = data.role.toLowerCase();
+      dbUpdates.role = lower.includes('admin') ? 'admin' : (lower.includes('lead') ? 'teamlead' : 'employee');
+    }
+    if (data.status) dbUpdates.status = data.status;
+    dbUpdates.updated_at = new Date().toISOString();
+
+    const { error } = await supabase.from('users').update(dbUpdates).eq('id', userId);
+    if (error) {
+      console.error('Supabase updateUser error:', error);
+      throw new Error(error.message);
+    }
+    return { success: true };
+  },
+
+  async deleteUser(userId: string) {
+    const { error } = await supabase.from('users').delete().eq('id', userId);
+    if (error) {
+      console.error('Supabase deleteUser error:', error);
+      throw new Error(error.message);
+    }
+    return { success: true };
+  },
+
   async getSmtpStatus() {
     try {
       const resp = await fetch('http://localhost:8000/api/v1/notifications/smtp-status');
@@ -258,7 +321,7 @@ export const AdminApiService = {
           slaStatus: mapSlaStatus(t.sla_status),
           createdAt: t.created_at ? t.created_at.replace('T', ' ').slice(0, 16) : '',
           updatedAt: t.updated_at ? t.updated_at.replace('T', ' ').slice(0, 16) : '',
-          dueDate: t.created_at ? t.created_at.replace('T', ' ').slice(0, 16) : '',
+          dueDate: calculateSLADeadline(t.created_at, t.priority, t.due_date),
           attachments: t.attachments || [],
         }));
 
@@ -307,7 +370,7 @@ export const AdminApiService = {
           slaStatus: mapSlaStatus(data.sla_status),
           createdAt: data.created_at ? data.created_at.replace('T', ' ').slice(0, 16) : '',
           updatedAt: data.updated_at ? data.updated_at.replace('T', ' ').slice(0, 16) : '',
-          dueDate: data.created_at ? data.created_at.replace('T', ' ').slice(0, 16) : '',
+          dueDate: calculateSLADeadline(data.created_at, data.priority, data.due_date),
           attachments: data.attachments || [],
           history: (dbActivities || []).map((a: any) => ({
             id: a.id,
@@ -353,6 +416,8 @@ export const AdminApiService = {
       ? data.employees.map((emp) => `${emp.name} (${emp.employeeId})`).join(', ')
       : 'Unassigned';
 
+    const calculatedDueDate = calculateSLADeadline(now.toISOString(), data.priority);
+
     const newTicket: Ticket = {
       id: ticketId,
       ticketNumber: ticketId,
@@ -370,7 +435,7 @@ export const AdminApiService = {
       slaStatus: 'Normal',
       createdAt: formatted,
       updatedAt: formatted,
-      dueDate: formatted,
+      dueDate: calculatedDueDate,
       attachments: data.attachments || [],
       teamLeads: data.teamLeads,
       employees: data.employees,
@@ -397,6 +462,7 @@ export const AdminApiService = {
       status: 'Open',
       assigned_agent: employeeSummary !== 'Unassigned' ? employeeSummary : 'Unassigned',
       assigned_by: teamLeadSummary,
+      due_date: calculatedDueDate,
       sla_status: 'Within SLA',
       sla_remaining: '8h 00m remaining',
       departments: data.departments || [],
@@ -443,6 +509,7 @@ export const AdminApiService = {
     if (updates.priority) dbUpdates.priority = updates.priority;
     if (updates.assignedTo) dbUpdates.assigned_agent = updates.assignedTo;
     if (updates.department) dbUpdates.department = updates.department;
+    if (updates.dueDate) dbUpdates.due_date = updates.dueDate;
 
     if (Object.keys(dbUpdates).length > 0) {
       const { error } = await supabase.from('tickets').update(dbUpdates).eq('id', ticketId);

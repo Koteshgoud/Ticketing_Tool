@@ -1,27 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
-import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
-import type { User } from '../../types';
+import { Modal } from '../../components/ui/Modal';
+import type { User, UserDepartment, UserRole, UserStatus } from '../../types';
 import { AdminApiService } from '../../services/api';
 import {
   UserPlus,
   Search,
   Edit3,
   Trash2,
-  Copy,
-  Check,
-  Send,
-  ShieldCheck,
-  Mail,
-  Key,
-  Info,
-  RefreshCw,
-  AlertTriangle,
-  ExternalLink
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -32,21 +24,37 @@ export const UserManagementPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
-  const [smtpStatus, setSmtpStatus] = useState<any>(null);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  // Edit User Modal State
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editFormData, setEditFormData] = useState<{
+    name: string;
+    email: string;
+    department: UserDepartment;
+    role: UserRole;
+    status: UserStatus;
+  }>({
+    name: '',
+    email: '',
+    department: 'IT Support',
+    role: 'Employee',
+    status: 'Active',
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Delete User Modal State
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Notification Toast
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [userData, smtp] = await Promise.all([
-        AdminApiService.getUsers(),
-        AdminApiService.getSmtpStatus()
-      ]);
+      const userData = await AdminApiService.getUsers();
       setUsers(userData);
       setFilteredUsers(userData);
-      setSmtpStatus(smtp);
     } catch (e) {
       console.error(e);
     } finally {
@@ -57,6 +65,13 @@ export const UserManagementPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   useEffect(() => {
     let result = users;
@@ -70,156 +85,153 @@ export const UserManagementPage: React.FC = () => {
     setFilteredUsers(result);
   }, [search, roleFilter, users]);
 
-  const handleCopyLink = (row: User) => {
-    const roleNorm = (row.role || 'employee').toLowerCase().replace(' ', '');
-    const token = row.inviteToken || '';
-    const baseUrl = window.location.href.split('#')[0].replace(/\/+$/, '');
-    const url = `${baseUrl}/#/signup?token=${token}&email=${encodeURIComponent(row.email)}&role=${roleNorm}`;
-    navigator.clipboard.writeText(url);
-    setCopiedId(row.id);
-    setActionMessage({ text: `✓ Verification link copied for ${row.name} (${row.email})!`, type: 'success' });
-    setTimeout(() => {
-      setCopiedId(null);
-      setActionMessage(null);
-    }, 4000);
+  const handleOpenEdit = (user: User) => {
+    setEditingUser(user);
+    setEditFormData({
+      name: user.name,
+      email: user.email,
+      department: user.department,
+      role: user.role,
+      status: user.status,
+    });
   };
 
-  const handleResendInvite = async (row: User) => {
-    setActionLoadingId(row.id);
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setIsSavingEdit(true);
     try {
-      const res = await AdminApiService.resendInvite({
-        name: row.name,
-        email: row.email,
-        employeeId: row.employeeId || row.id,
-        role: row.role,
-        department: row.department,
-        inviteToken: row.inviteToken
+      await AdminApiService.updateUser(editingUser.id, {
+        name: editFormData.name,
+        email: editFormData.email,
+        department: editFormData.department,
+        role: editFormData.role,
+        status: editFormData.status,
       });
-      if (res.smtp_sent) {
-        setActionMessage({ text: `✓ Live invitation email delivered to ${row.email}!`, type: 'success' });
-      } else {
-        setActionMessage({
-          text: `ℹ️ Verification link generated for ${row.email}. (Token: ${res.invite_token || row.inviteToken || 'Ready'}). You can copy the link below.`,
-          type: 'info'
-        });
-      }
-      await loadData();
-    } catch {
-      setActionMessage({ text: `Failed to resend invite for ${row.email}.`, type: 'error' });
+
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === editingUser.id
+            ? {
+                ...u,
+                name: editFormData.name,
+                email: editFormData.email,
+                department: editFormData.department,
+                role: editFormData.role,
+                status: editFormData.status,
+              }
+            : u
+        )
+      );
+
+      setEditingUser(null);
+      setToastMessage({ text: `User ${editFormData.name} updated successfully!`, type: 'success' });
+    } catch (err: any) {
+      setToastMessage({ text: err.message || 'Failed to update user', type: 'error' });
     } finally {
-      setActionLoadingId(null);
-      setTimeout(() => setActionMessage(null), 5000);
+      setIsSavingEdit(false);
     }
   };
 
-  const handleActivateUser = async (row: User) => {
-    if (!confirm(`Are you sure you want to manually activate ${row.name} (${row.email})? This bypasses invitation verification and enables immediate login.`)) {
-      return;
-    }
-    setActionLoadingId(row.id);
+  const handleConfirmDelete = async () => {
+    if (!deletingUser) return;
+    setIsDeleting(true);
     try {
-      await AdminApiService.manuallyActivateUser(row.id);
-      setActionMessage({ text: `✓ User ${row.name} (${row.email}) is now Active and can sign in!`, type: 'success' });
-      await loadData();
-    } catch {
-      setActionMessage({ text: `Failed to activate ${row.name}.`, type: 'error' });
+      await AdminApiService.deleteUser(deletingUser.id);
+      setUsers(prev => prev.filter(u => u.id !== deletingUser.id));
+      setToastMessage({ text: `User ${deletingUser.name} deleted successfully!`, type: 'success' });
+      setDeletingUser(null);
+    } catch (err: any) {
+      setToastMessage({ text: err.message || 'Failed to delete user', type: 'error' });
     } finally {
-      setActionLoadingId(null);
-      setTimeout(() => setActionMessage(null), 4000);
+      setIsDeleting(false);
     }
   };
 
   const columns: Column<User>[] = [
     {
-      header: 'User & Email',
+      header: 'USER & EMAIL',
       cell: (row) => (
         <div className="flex items-center gap-3">
           <img
             src={row.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
             alt={row.name}
-            className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200"
+            className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200"
           />
           <div>
-            <div className="font-semibold text-slate-900 text-[13px]">{row.name}</div>
-            <div className="text-[12px] text-slate-500 font-mono">{row.email}</div>
+            <div className="font-bold text-slate-900 text-[13px]">{row.name}</div>
+            <div className="text-[12px] text-slate-500">{row.email}</div>
           </div>
         </div>
       )
     },
     {
-      header: 'Department',
-      accessorKey: 'department'
+      header: 'DEPARTMENT',
+      cell: (row) => (
+        <span className="text-[13px] text-slate-700 font-normal">{row.department}</span>
+      )
     },
     {
-      header: 'Role',
-      cell: (row) => {
-        const variant = row.role === 'Admin' ? 'indigo' : row.role === 'Team Lead' ? 'info' : 'neutral';
-        return <Badge variant={variant} className="text-[11px]">{row.role}</Badge>;
-      }
+      header: 'ROLE',
+      cell: (row) => (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-sky-50 text-[#0284C7] border border-sky-100">
+          {row.role}
+        </span>
+      )
     },
     {
-      header: 'Status & Verification',
+      header: 'STATUS',
       cell: (row) => {
-        const variant = row.status === 'Active' ? 'success' : row.status === 'Pending Invitation' ? 'warning' : 'neutral';
+        if (row.status === 'Active') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Active
+            </span>
+          );
+        }
+        if (row.status === 'Pending Invitation') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              Pending Invitation
+            </span>
+          );
+        }
         return (
-          <div className="space-y-1">
-            <Badge variant={variant} dot className="text-[11px]">{row.status}</Badge>
-            {row.status === 'Pending Invitation' && row.inviteToken && (
-              <div className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-block">
-                Token: {row.inviteToken}
-              </div>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            {row.status}
+          </span>
         );
       }
     },
     {
-      header: 'Joined Date',
-      accessorKey: 'createdAt'
+      header: 'JOINED DATE',
+      cell: (row) => (
+        <span className="text-[13px] text-slate-600 font-normal">{row.createdAt}</span>
+      )
     },
     {
-      header: 'Actions & Verifications',
+      header: 'ACTIONS',
       cell: (row) => (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {row.status === 'Pending Invitation' ? (
-            <>
-              <button
-                type="button"
-                onClick={() => handleCopyLink(row)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer"
-                title="Copy direct verification signup link"
-              >
-                {copiedId === row.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                {copiedId === row.id ? 'Copied' : 'Copy Link'}
-              </button>
-
-              <button
-                type="button"
-                disabled={actionLoadingId === row.id}
-                onClick={() => handleResendInvite(row)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 cursor-pointer disabled:opacity-50"
-                title="Resend verification email"
-              >
-                <Send className="w-3 h-3" />
-                Resend
-              </button>
-
-              <button
-                type="button"
-                disabled={actionLoadingId === row.id}
-                onClick={() => handleActivateUser(row)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer disabled:opacity-50"
-                title="Bypass invitation and activate immediately"
-              >
-                <ShieldCheck className="w-3 h-3" />
-                Activate
-              </button>
-            </>
-          ) : (
-            <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> Verified
-            </span>
-          )}
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => handleOpenEdit(row)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer transition-colors"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-slate-500" />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeletingUser(row)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 cursor-pointer transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+            Delete
+          </button>
         </div>
       )
     }
@@ -227,80 +239,59 @@ export const UserManagementPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 shadow-xs ${
+          toastMessage.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-rose-50 border-rose-200 text-rose-800'
+        }`}>
+          <div className="flex items-center gap-2">
+            {toastMessage.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{toastMessage.text}</span>
+          </div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Page Header matching Picture 1 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Badge variant="indigo" className="text-[12px] py-0.5 px-2.5">Administration</Badge>
-            <span className="text-[13px] text-slate-500">User Access & Verification Management</span>
+            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-sky-100 text-sky-700">
+              Administration
+            </span>
+            <span className="text-xs text-slate-500">User Access Management</span>
           </div>
-          <h1 className="text-[26px] font-bold text-slate-900 tracking-tight mt-1 mb-0">User Management</h1>
-          <p className="text-[13px] text-slate-500 mt-1">
-            Manage system accounts, send and track email verifications, and activate employees.
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 mb-0">User Management</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Manage system accounts, employee status, and team assignments.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
-            size="sm"
-            onClick={loadData}
-            icon={<RefreshCw className="w-4 h-4" />}
-            className="text-[13px]"
-          >
-            Refresh
-          </Button>
-          <Button
             variant="primary"
-            size="sm"
+            size="md"
             onClick={() => navigate('/admin/add-user')}
             icon={<UserPlus className="w-4 h-4" />}
-            className="text-[13px]"
+            className="bg-[#0284C7] hover:bg-[#0274B3] text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xs"
           >
             Add New User
           </Button>
         </div>
       </div>
 
-      {/* Action Notification Banner */}
-      {actionMessage && (
-        <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
-          actionMessage.type === 'success'
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : actionMessage.type === 'info'
-            ? 'bg-sky-50 border-sky-200 text-sky-800'
-            : 'bg-rose-50 border-rose-200 text-rose-800'
-        }`}>
-          <Info className="w-4 h-4 shrink-0" />
-          <span>{actionMessage.text}</span>
-        </div>
-      )}
-
-      {/* SMTP Delivery Diagnostics Card */}
-      {smtpStatus && !smtpStatus.is_configured && (
-        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-amber-900 block">
-                Live Gmail SMTP Email Delivery Requires App Password
-              </span>
-              <span className="text-amber-700 leading-relaxed block mt-0.5">
-                Configured sender: <strong>{smtpStatus.sender_email || 'kotesh1720@gmail.com'}</strong>. For live emails to reach inboxes, set a 16-character Google App Password in <code>backend/.env</code>.
-                In the meantime, verification tokens and direct onboarding links can be copied or resent using the buttons below!
-              </span>
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate('/admin/administration/settings')}
-            className="shrink-0 text-xs border-amber-300 text-amber-900 hover:bg-amber-100"
-          >
-            Go to Settings
-          </Button>
-        </div>
-      )}
-
+      {/* Search and Filter Card */}
       <Card>
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
           <div className="flex-1 w-full">
@@ -327,6 +318,138 @@ export const UserManagementPage: React.FC = () => {
 
         <Table columns={columns} data={filteredUsers} keyExtractor={(row) => row.id} isLoading={isLoading} compact />
       </Card>
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <Modal
+          isOpen={true}
+          onClose={() => setEditingUser(null)}
+          title="Edit User Details"
+        >
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Full Name</label>
+              <input
+                type="text"
+                required
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#0284C7]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Email Address</label>
+              <input
+                type="email"
+                required
+                value={editFormData.email}
+                onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#0284C7]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Department</label>
+              <select
+                value={editFormData.department}
+                onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value as UserDepartment })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#0284C7] bg-white"
+              >
+                <option value="IT Support">IT Support</option>
+                <option value="HR">HR</option>
+                <option value="Finance">Finance</option>
+                <option value="Operations">Operations</option>
+                <option value="Facilities">Facilities</option>
+                <option value="Sales">Sales</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Legal">Legal</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Role</label>
+              <select
+                value={editFormData.role}
+                onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value as UserRole })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#0284C7] bg-white"
+              >
+                <option value="Admin">Admin</option>
+                <option value="Team Lead">Team Lead</option>
+                <option value="Employee">Employee</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Status</label>
+              <select
+                value={editFormData.status}
+                onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as UserStatus })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#0284C7] bg-white"
+              >
+                <option value="Active">Active</option>
+                <option value="Pending Invitation">Pending Invitation</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => setEditingUser(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+                disabled={isSavingEdit}
+                className="bg-[#0284C7] text-white"
+              >
+                {isSavingEdit ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingUser && (
+        <Modal
+          isOpen={true}
+          onClose={() => setDeletingUser(null)}
+          title="Delete User"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to delete user <strong className="text-slate-900">{deletingUser.name}</strong> ({deletingUser.email})?
+              This will permanently revoke their access and remove their account record.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletingUser(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="bg-rose-600 hover:bg-rose-700 text-white"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete User'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

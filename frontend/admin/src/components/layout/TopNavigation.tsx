@@ -287,12 +287,6 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                   <UserIcon className="w-3.5 h-3.5 text-slate-500" /> My Profile
                 </button>
                 <button
-                  onClick={() => { setShowProfileMenu(false); navigate('/admin/settings'); }}
-                  className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
-                >
-                  <Settings className="w-3.5 h-3.5 text-slate-500" /> Account Settings
-                </button>
-                <button
                   onClick={() => { setShowProfileMenu(false); setShowNotifications(true); }}
                   className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer font-medium"
                 >
