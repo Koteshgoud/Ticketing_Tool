@@ -34,12 +34,13 @@ export const TicketManagementPage: React.FC = () => {
   // Drawer / Modal states
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
-  const [actionModalType, setActionModalType] = useState<'assign' | 'reassign' | 'status' | 'priority' | 'escalate' | null>(null);
+  const [actionModalType, setActionModalType] = useState<'assign' | 'reassign' | 'status' | 'priority' | 'escalate' | 'deadline' | null>(null);
 
   // Modal form values
   const [modalAssignee, setModalAssignee] = useState('');
   const [modalStatus, setModalStatus] = useState<TicketStatus>('In Progress');
   const [modalPriority, setModalPriority] = useState<TicketPriority>('High');
+  const [modalDeadline, setModalDeadline] = useState('');
   const [modalNote, setModalNote] = useState('');
   const [newComment, setNewComment] = useState('');
 
@@ -94,37 +95,42 @@ export const TicketManagementPage: React.FC = () => {
   const countPending = tickets.filter((t) => t.status === 'Pending').length;
   const countEscalated = tickets.filter((t) => t.status === 'Escalated').length;
 
-  const handleOpenActionModal = (ticket: Ticket, type: 'assign' | 'reassign' | 'status' | 'priority' | 'escalate') => {
+  const handleOpenActionModal = (ticket: Ticket, type: 'assign' | 'reassign' | 'status' | 'priority' | 'escalate' | 'deadline') => {
     setSelectedTicket(ticket);
     setActionModalType(type);
     setModalAssignee(ticket.assignedTo || 'Kotesh Goud');
     setModalStatus(ticket.status);
     setModalPriority(ticket.priority);
+    setModalDeadline(ticket.dueDate ? ticket.dueDate.replace(' ', 'T').slice(0, 16) : '');
     setModalNote('');
   };
 
-  const handleSaveActionModal = () => {
+  const handleSaveActionModal = async () => {
     if (!selectedTicket || !actionModalType) return;
 
-    setTickets((prev) =>
-      prev.map((t) => {
-        if (t.id !== selectedTicket.id) return t;
-        let updated = { ...t };
-        if (actionModalType === 'assign' || actionModalType === 'reassign') {
-          updated.assignedTo = modalAssignee;
-          if (updated.status === 'Open') updated.status = 'In Progress';
-        } else if (actionModalType === 'status') {
-          updated.status = modalStatus;
-        } else if (actionModalType === 'priority') {
-          updated.priority = modalPriority;
-        } else if (actionModalType === 'escalate') {
-          updated.status = 'Escalated';
-          updated.priority = 'Urgent';
-        }
-        return updated;
-      })
-    );
+    let updatedTicket = { ...selectedTicket };
+    if (actionModalType === 'assign' || actionModalType === 'reassign') {
+      updatedTicket.assignedTo = modalAssignee;
+      if (updatedTicket.status === 'Open') updatedTicket.status = 'In Progress';
+      AdminApiService.updateTicket(selectedTicket.id, { assignedTo: modalAssignee, status: updatedTicket.status }, modalNote || `Assigned to ${modalAssignee}`);
+    } else if (actionModalType === 'status') {
+      updatedTicket.status = modalStatus;
+      AdminApiService.updateTicket(selectedTicket.id, { status: modalStatus }, modalNote || `Status changed to ${modalStatus}`);
+    } else if (actionModalType === 'priority') {
+      updatedTicket.priority = modalPriority;
+      AdminApiService.updateTicket(selectedTicket.id, { priority: modalPriority }, modalNote || `Priority changed to ${modalPriority}`);
+    } else if (actionModalType === 'escalate') {
+      updatedTicket.status = 'Escalated';
+      updatedTicket.priority = 'Urgent';
+      AdminApiService.updateTicket(selectedTicket.id, { status: 'Escalated', priority: 'Urgent' }, modalNote || 'Ticket escalated');
+    } else if (actionModalType === 'deadline') {
+      const formatted = modalDeadline.replace('T', ' ').slice(0, 16);
+      updatedTicket.dueDate = formatted;
+      AdminApiService.updateTicket(selectedTicket.id, { dueDate: formatted }, modalNote || `SLA Deadline set to ${formatted}`);
+    }
 
+    setTickets((prev) => prev.map((t) => (t.id === selectedTicket.id ? updatedTicket : t)));
+    setSelectedTicket(updatedTicket);
     setActionModalType(null);
   };
 
@@ -557,6 +563,61 @@ export const TicketManagementPage: React.FC = () => {
               </div>
             )}
 
+            {actionModalType === 'deadline' && (
+              <div className="space-y-3">
+                <label className="font-semibold text-slate-700 block mb-1">Set SLA Deadline *</label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 4 * 60 * 60 * 1000);
+                      setModalDeadline(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                    }}
+                    className="px-2 py-1.5 text-[11px] rounded bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-left cursor-pointer hover:bg-rose-100"
+                  >
+                    +4 Hours (Urgent)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                      setModalDeadline(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                    }}
+                    className="px-2 py-1.5 text-[11px] rounded bg-amber-50 text-amber-700 border border-amber-200 font-semibold text-left cursor-pointer hover:bg-amber-100"
+                  >
+                    +24 Hours (High)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 48 * 60 * 60 * 1000);
+                      setModalDeadline(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                    }}
+                    className="px-2 py-1.5 text-[11px] rounded bg-sky-50 text-sky-700 border border-sky-200 font-semibold text-left cursor-pointer hover:bg-sky-100"
+                  >
+                    +48 Hours (Medium)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 72 * 60 * 60 * 1000);
+                      setModalDeadline(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                    }}
+                    className="px-2 py-1.5 text-[11px] rounded bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-left cursor-pointer hover:bg-slate-100"
+                  >
+                    +72 Hours (Low)
+                  </button>
+                </div>
+                <input
+                  type="datetime-local"
+                  required
+                  value={modalDeadline}
+                  onChange={(e) => setModalDeadline(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-md p-2 text-slate-800 text-xs focus:outline-none focus:border-[#0284C7]"
+                />
+              </div>
+            )}
+
             {/* Note input */}
             <div>
               <label className="font-semibold text-slate-700 block mb-1">Action Note / Log Reason (Optional)</label>
@@ -605,6 +666,12 @@ export const TicketManagementPage: React.FC = () => {
                     className="px-2 py-1 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded border border-slate-300 font-medium cursor-pointer text-[11px]"
                   >
                     Assign / Reassign
+                  </button>
+                  <button
+                    onClick={() => handleOpenActionModal(selectedTicket, 'deadline')}
+                    className="px-2 py-1 bg-sky-50 text-[#0284C7] hover:bg-sky-100 rounded border border-sky-200 font-medium cursor-pointer text-[11px]"
+                  >
+                    Assign Deadline
                   </button>
                   <button
                     onClick={() => handleOpenActionModal(selectedTicket, 'status')}
@@ -670,11 +737,15 @@ export const TicketManagementPage: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-slate-400 font-medium block">Updated Date</span>
-                  <span className="font-semibold text-slate-700">{selectedTicket.createdAt}</span>
+                  <span className="font-semibold text-slate-700">{selectedTicket.updatedAt || selectedTicket.createdAt}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 font-medium block">SLA Status</span>
                   <span className="font-bold text-amber-600">{selectedTicket.slaStatus}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-medium block">SLA Deadline</span>
+                  <span className="font-bold text-[#0284C7]">{selectedTicket.dueDate || selectedTicket.createdAt}</span>
                 </div>
               </div>
 
