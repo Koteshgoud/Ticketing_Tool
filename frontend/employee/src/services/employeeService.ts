@@ -26,6 +26,24 @@ export const INITIAL_EMPLOYEE_PROFILE: EmployeeProfile = {
 let ticketsCache: EmployeeTicket[] = [];
 let notificationsCache: EmployeeNotificationItem[] = [];
 
+export function formatDateTime(isoOrString?: string): string {
+  if (!isoOrString) return '';
+  let str = isoOrString;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(str) && !str.includes('Z') && !str.includes('+')) {
+    str = str.replace(' ', 'T') + 'Z';
+  }
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return isoOrString;
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 function mapDbTicket(row: any): EmployeeTicket {
   const t: EmployeeTicket = {
     id: row.id,
@@ -39,11 +57,11 @@ function mapDbTicket(row: any): EmployeeTicket {
     teamLeads: [],
     priority: (row.priority || 'Medium') as TicketPriority,
     status: (row.status || 'Open') as TicketStatus,
-    createdAt: row.created_at ? row.created_at.replace('T', ' ').slice(0, 16) : new Date().toISOString().replace('T', ' ').slice(0, 16),
-    updatedAt: row.updated_at ? row.updated_at.replace('T', ' ').slice(0, 16) : new Date().toISOString().replace('T', ' ').slice(0, 16),
+    createdAt: formatDateTime(row.created_at),
+    updatedAt: formatDateTime(row.updated_at || row.created_at),
     assignedTo: row.assigned_agent || row.assigned_to || '',
     assignedBy: row.assigned_by || '',
-    assignedDate: row.assigned_date ? row.assigned_date.replace('T', ' ').slice(0, 16) : undefined,
+    assignedDate: row.assigned_date ? formatDateTime(row.assigned_date) : undefined,
     sla: row.sla_remaining || row.sla_status || 'Within SLA',
     attachments: row.attachments || [],
     resolutionNotes: row.resolution_summary || '',
@@ -80,7 +98,23 @@ export const EmployeeService = {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        ticketsCache = data.map(mapDbTicket);
+        const { data: allAttachments } = await supabase
+          .from('ticket_attachments')
+          .select('*');
+
+        const attMap: Record<string, string[]> = {};
+        if (allAttachments) {
+          allAttachments.forEach((att: any) => {
+            if (!attMap[att.ticket_id]) attMap[att.ticket_id] = [];
+            attMap[att.ticket_id].push(att.size && att.size !== 'N/A' ? `${att.name} (${att.size})` : att.name);
+          });
+        }
+
+        ticketsCache = data.map((d: any) => {
+          const t = mapDbTicket(d);
+          if (attMap[t.id] && attMap[t.id].length > 0) t.attachments = attMap[t.id];
+          return t;
+        });
         return ticketsCache;
       }
     } catch (e) {
@@ -177,8 +211,20 @@ export const EmployeeService = {
           id: a.id,
           author: a.user,
           text: a.action,
-          timestamp: a.timestamp ? a.timestamp.replace('T', ' ').slice(0, 16) : '',
+          timestamp: a.timestamp ? formatDateTime(a.timestamp) : '',
         }));
+
+        const { data: dbAttachments } = await supabase
+          .from('ticket_attachments')
+          .select('*')
+          .eq('ticket_id', idOrNum)
+          .order('created_at', { ascending: true });
+
+        if (dbAttachments && dbAttachments.length > 0) {
+          ticket.attachments = dbAttachments.map((a: any) =>
+            a.size && a.size !== 'N/A' ? `${a.name} (${a.size})` : a.name
+          );
+        }
 
         // Update in cache
         const idx = ticketsCache.findIndex(t => t.id === idOrNum);
@@ -278,8 +324,8 @@ export const EmployeeService = {
 
       (async () => {
         try {
-          // Insert notifications into notifications table
-          await supabase.from('notifications').insert([
+          // Insert notifications into portal_notifications table
+          await supabase.from('portal_notifications').insert([
             {
               id: `notif-${Date.now()}-tl`,
               ticket_id: ticketId,
@@ -354,7 +400,8 @@ export const EmployeeService = {
     const actorName = user?.name || 'Employee';
 
     try {
-      await supabase.from('tickets').update({ status: newStatus }).eq('id', ticketId);
+      const now = new Date().toISOString();
+      await supabase.from('tickets').update({ status: newStatus, updated_at: now }).eq('id', ticketId);
 
       await supabase.from('ticket_activities').insert([{
         id: `act-${Date.now()}`,
@@ -377,9 +424,11 @@ export const EmployeeService = {
     const actorName = user?.name || 'Employee';
 
     try {
+      const now = new Date().toISOString();
       await supabase.from('tickets').update({
         status: 'Resolved',
         resolution_summary: resolutionNotes,
+        updated_at: now,
       }).eq('id', ticketId);
 
       await supabase.from('ticket_activities').insert([{
@@ -403,9 +452,11 @@ export const EmployeeService = {
     const actorName = user?.name || 'Employee';
 
     try {
+      const now = new Date().toISOString();
       await supabase.from('tickets').update({
         status: 'Escalated',
         escalation_reason: reason,
+        updated_at: now,
       }).eq('id', ticketId);
 
       const ticket = this.getTicketById(ticketId);
@@ -419,7 +470,7 @@ export const EmployeeService = {
         escalated_to: ticket?.assignedBy || 'Team Lead',
         escalation_reason: `${reason}. ${comment}`,
         sla_status: 'Escalated',
-        escalated_date: new Date().toISOString().replace('T', ' ').slice(0, 16),
+        escalated_date: now,
         status: 'Pending Review',
       }]);
 
@@ -444,13 +495,14 @@ export const EmployeeService = {
     const actorName = user?.name || 'Employee';
 
     try {
+      const now = new Date().toISOString();
       await supabase.from('ticket_comments').insert([{
         id: `comm-${Date.now()}`,
         ticket_id: ticketId,
         author_name: actorName,
         author_role: 'employee',
         message: text,
-        created_at: new Date().toISOString(),
+        created_at: now,
       }]);
 
       await supabase.from('ticket_activities').insert([{
@@ -458,8 +510,10 @@ export const EmployeeService = {
         ticket_id: ticketId,
         user: actorName,
         action: `Comment: ${text}${attachmentName ? ` (Attachment: ${attachmentName})` : ''}`,
-        timestamp: new Date().toISOString(),
+        timestamp: now,
       }]);
+
+      await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
 
       await this.fetchTickets();
       return this.getTicketById(ticketId) || null;
@@ -474,12 +528,16 @@ export const EmployeeService = {
     const actorName = user?.name || 'Employee';
 
     try {
+      const now = new Date().toISOString();
+      const name = fileName.includes(' (') ? fileName.split(' (')[0] : fileName;
+      const size = fileName.includes('(') ? fileName.split('(')[1].replace(')', '') : '1 MB';
+
       await supabase.from('ticket_attachments').insert([{
-        id: `att-${Date.now()}`,
+        id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         ticket_id: ticketId,
-        name: fileName,
-        size: '1 MB',
-        created_at: new Date().toISOString(),
+        name,
+        size,
+        created_at: now,
       }]);
 
       await supabase.from('ticket_activities').insert([{
@@ -487,8 +545,10 @@ export const EmployeeService = {
         ticket_id: ticketId,
         user: actorName,
         action: `Uploaded attachment: ${fileName}`,
-        timestamp: new Date().toISOString(),
+        timestamp: now,
       }]);
+
+      await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
 
       await this.fetchTickets();
       return this.getTicketById(ticketId) || null;
@@ -505,7 +565,7 @@ export const EmployeeService = {
       const userEmail = user?.email || '';
 
       const { data, error } = await supabase
-        .from('notifications')
+        .from('portal_notifications')
         .select('*')
         .order('timestamp', { ascending: false });
 
@@ -545,7 +605,7 @@ export const EmployeeService = {
   },
 
   markNotificationsAsRead(): EmployeeNotificationItem[] {
-    supabase.from('notifications').update({ read: true }).eq('read', false).then(() => {});
+    supabase.from('portal_notifications').update({ read: true }).eq('read', false).then(() => {});
     notificationsCache = notificationsCache.map((n) => ({ ...n, isRead: true }));
     return notificationsCache;
   },
@@ -565,15 +625,45 @@ export const EmployeeService = {
 
   updateProfile(data: Partial<EmployeeProfile>): EmployeeProfile {
     const user = getEmployeeSessionUser();
-    if (user?.id) {
+    if (user?.id || user?.email) {
       const dbUpdates: Record<string, any> = {};
-      if (data.name) dbUpdates.name = data.name;
-      if (data.phone) dbUpdates.phone = data.phone;
-      if (data.department) dbUpdates.department = data.department;
-      if (data.avatarUrl !== undefined) dbUpdates.avatar = data.avatarUrl;
-      supabase.from('users').update(dbUpdates).eq('id', user.id).then(() => {});
+      if (data.name !== undefined) dbUpdates.name = data.name;
+      if (data.phone !== undefined) dbUpdates.phone = data.phone;
+      if (data.department !== undefined) dbUpdates.department = data.department;
+      if (data.avatarUrl !== undefined) dbUpdates.avatar = data.avatarUrl || null;
+      dbUpdates.updated_at = new Date().toISOString();
+
+      if (user?.id) {
+        supabase.from('users').update(dbUpdates).eq('id', user.id).then(() => {});
+      } else if (user?.email) {
+        supabase.from('users').update(dbUpdates).eq('email', user.email.toLowerCase()).then(() => {});
+      }
     }
-    return this.getProfile();
+
+    const updatedUser = {
+      ...(user || {}),
+      name: data.name !== undefined ? data.name : user?.name,
+      phone: data.phone !== undefined ? data.phone : user?.phone,
+      department: data.department !== undefined ? data.department : user?.department,
+      avatar: data.avatarUrl !== undefined ? data.avatarUrl : user?.avatar,
+      avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : user?.avatar,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      localStorage.setItem('platform_current_user', JSON.stringify(updatedUser));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
+
+    return {
+      name: updatedUser.name || 'Employee',
+      email: updatedUser.email || 'employee@company.com',
+      employeeId: updatedUser.id || updatedUser.employeeId || 'OKL004',
+      department: updatedUser.department || 'Operations',
+      role: updatedUser.role || 'Employee',
+      phone: updatedUser.phone || '',
+      avatarUrl: updatedUser.avatar || '',
+    };
   },
 
   getSummaryStats() {

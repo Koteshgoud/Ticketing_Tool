@@ -12,6 +12,7 @@ import {
   User as UserIcon
 } from 'lucide-react';
 import { logoutUser, getCurrentSessionUser } from '../../services/unifiedAuth';
+import { supabase } from '../../services/supabaseClient';
 
 export interface NotificationItem {
   id: string;
@@ -116,10 +117,45 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     return () => window.removeEventListener('storage', checkProfile);
   }, []);
 
+  // Fetch real-time / persisted notifications from portal_notifications
+  useEffect(() => {
+    const fetchAdminNotifications = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('portal_notifications')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(20);
+
+        if (!error && data) {
+          const allowedRoles = ['all', 'admin'];
+          const filtered = data.filter((n: any) => allowedRoles.includes(n.for_role));
+          const mapped: NotificationItem[] = filtered.map((n: any) => ({
+            id: n.id,
+            title: n.title || 'System Notification',
+            time: n.timestamp ? new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+            type: n.type || 'info',
+            isRead: !!n.read,
+          }));
+          setNotifications(mapped);
+        }
+      } catch (err) {
+        console.warn('Error fetching admin notifications:', err);
+      }
+    };
+
+    fetchAdminNotifications();
+    const interval = setInterval(fetchAdminNotifications, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
   const hasUnread = notifications.some((n) => !n.isRead);
 
-  const handleMarkAllAsRead = () => {
+  const handleMarkAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      await supabase.from('portal_notifications').update({ read: true }).eq('read', false);
+    } catch {}
     if (onMarkAllAsRead) {
       onMarkAllAsRead();
     }
@@ -236,12 +272,18 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                 </button>
               </div>
               <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-                {notifications.map((n) => (
-                  <div key={n.id} className="p-3 hover:bg-slate-50 transition-colors cursor-pointer">
-                    <p className="text-xs font-medium text-slate-800">{n.title}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{n.time}</p>
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-400 italic">
+                    No notifications yet.
                   </div>
-                ))}
+                ) : (
+                  notifications.map((n) => (
+                    <div key={n.id} className={`p-3 hover:bg-slate-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-sky-50/50' : ''}`}>
+                      <p className="text-xs font-medium text-slate-800">{n.title}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{n.time}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

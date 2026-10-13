@@ -476,6 +476,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return t;
       })
     );
+    ticketService.addAttachment(ticketId, attachment).catch(() => {});
   };
 
   const markNotificationRead = (notificationId: string) => {

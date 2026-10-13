@@ -44,6 +44,24 @@ export function calculateSLADeadline(createdAtStr?: string, priority?: string, e
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
+export function formatDateTime(isoOrString?: string): string {
+  if (!isoOrString) return '';
+  let str = isoOrString;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(str) && !str.includes('Z') && !str.includes('+')) {
+    str = str.replace(' ', 'T') + 'Z';
+  }
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return isoOrString;
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 // Compatibility empty exports (no mock data used)
 export const mockUsers: User[] = [];
 export const mockTickets: Ticket[] = [];
@@ -305,6 +323,18 @@ export const AdminApiService = {
         .order('created_at', { ascending: false });
 
       if (!error && dbTickets) {
+        const { data: allAttachments } = await supabase
+          .from('ticket_attachments')
+          .select('*');
+
+        const attMap: Record<string, string[]> = {};
+        if (allAttachments) {
+          allAttachments.forEach((att: any) => {
+            if (!attMap[att.ticket_id]) attMap[att.ticket_id] = [];
+            attMap[att.ticket_id].push(att.size && att.size !== 'N/A' ? `${att.name} (${att.size})` : att.name);
+          });
+        }
+
         const mapped: Ticket[] = dbTickets.map((t: any) => ({
           id: t.id,
           ticketNumber: t.id,
@@ -319,10 +349,10 @@ export const AdminApiService = {
           priority: t.priority || 'Medium',
           status: t.status || 'Open',
           slaStatus: mapSlaStatus(t.sla_status),
-          createdAt: t.created_at ? t.created_at.replace('T', ' ').slice(0, 16) : '',
-          updatedAt: t.updated_at ? t.updated_at.replace('T', ' ').slice(0, 16) : '',
+          createdAt: formatDateTime(t.created_at),
+          updatedAt: formatDateTime(t.updated_at || t.created_at),
           dueDate: calculateSLADeadline(t.created_at, t.priority, t.sla_due_at || t.due_date),
-          attachments: t.attachments || [],
+          attachments: (attMap[t.id] && attMap[t.id].length > 0) ? attMap[t.id] : (Array.isArray(t.attachments) ? t.attachments : []),
         }));
 
         if (!filterType || filterType === 'all') return mapped;
@@ -354,6 +384,16 @@ export const AdminApiService = {
           .eq('ticket_id', idOrNum)
           .order('timestamp', { ascending: false });
 
+        const { data: dbAttachments } = await supabase
+          .from('ticket_attachments')
+          .select('*')
+          .eq('ticket_id', idOrNum)
+          .order('created_at', { ascending: true });
+
+        const mappedAttachments: string[] = (dbAttachments && dbAttachments.length > 0)
+          ? dbAttachments.map((a: any) => a.size && a.size !== 'N/A' ? `${a.name} (${a.size})` : a.name)
+          : (Array.isArray(data.attachments) ? data.attachments : []);
+
         return {
           id: data.id,
           ticketNumber: data.id,
@@ -368,15 +408,15 @@ export const AdminApiService = {
           priority: data.priority || 'Medium',
           status: data.status || 'Open',
           slaStatus: mapSlaStatus(data.sla_status),
-          createdAt: data.created_at ? data.created_at.replace('T', ' ').slice(0, 16) : '',
-          updatedAt: data.updated_at ? data.updated_at.replace('T', ' ').slice(0, 16) : '',
+          createdAt: formatDateTime(data.created_at),
+          updatedAt: formatDateTime(data.updated_at || data.created_at),
           dueDate: calculateSLADeadline(data.created_at, data.priority, data.sla_due_at || data.due_date),
-          attachments: data.attachments || [],
+          attachments: mappedAttachments,
           history: (dbActivities || []).map((a: any) => ({
             id: a.id,
             author: a.user,
             text: a.action,
-            timestamp: a.timestamp ? a.timestamp.replace('T', ' ').slice(0, 16) : '',
+            timestamp: formatDateTime(a.timestamp),
           })),
         };
       }
@@ -582,14 +622,29 @@ export const AdminApiService = {
   async addAttachment(ticketId: string, fileName: string): Promise<Ticket | null> {
     const sessionUser = getCurrentSessionUser();
     const author = sessionUser?.name || 'User';
+    const now = new Date().toISOString();
+
+    const name = fileName.includes(' (') ? fileName.split(' (')[0] : fileName;
+    const size = fileName.includes('(') ? fileName.split('(')[1].replace(')', '') : '1 MB';
+
+    await supabase.from('ticket_attachments').insert([{
+      id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      ticket_id: ticketId,
+      name,
+      size,
+      url: '',
+      created_at: now,
+    }]);
 
     await supabase.from('ticket_activities').insert([{
       id: `act-${Date.now()}`,
       ticket_id: ticketId,
       user: author,
       action: `Uploaded attachment: ${fileName}`,
-      timestamp: new Date().toISOString(),
+      timestamp: now,
     }]);
+
+    await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
 
     return this.getTicketById(ticketId);
   },

@@ -64,12 +64,12 @@ export const teamLeadService = {
   getNotifications: async (userRole = 'teamlead', userName = ''): Promise<NotificationItem[]> => {
     try {
       const { data, error } = await supabase
-        .from('notifications')
+        .from('portal_notifications')
         .select('*')
         .order('timestamp', { ascending: false });
 
       if (!error && data) {
-        const allowedRoles = ['all', userRole];
+        const allowedRoles = ['all', userRole, 'teamlead'];
         const filtered = data.filter((n: any) => {
           if (allowedRoles.includes(n.for_role)) return true;
           if (userName && (n.message?.toLowerCase().includes(userName.toLowerCase()) || n.title?.toLowerCase().includes(userName.toLowerCase()))) return true;
@@ -95,7 +95,7 @@ export const teamLeadService = {
 
   markNotificationRead: async (id: string): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('notifications').update({ read: true }).eq('id', id);
+      const { error } = await supabase.from('portal_notifications').update({ read: true }).eq('id', id);
       return !error;
     } catch {
       return false;
@@ -104,7 +104,7 @@ export const teamLeadService = {
 
   markAllNotificationsRead: async (): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('notifications').update({ read: true }).eq('read', false);
+      const { error } = await supabase.from('portal_notifications').update({ read: true }).eq('read', false);
       return !error;
     } catch {
       return false;
@@ -119,7 +119,7 @@ export const teamLeadService = {
     forRole?: 'teamlead' | 'employee' | 'admin' | 'all';
   }): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('notifications').insert([{
+      const { error } = await supabase.from('portal_notifications').insert([{
         id: `notif-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         ticket_id: notif.ticketId || null,
         title: notif.title,

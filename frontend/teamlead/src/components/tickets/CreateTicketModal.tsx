@@ -55,8 +55,18 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   // Department selection matching Admin screen
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['IT Support']);
   const [customDepartment, setCustomDepartment] = useState('');
-  const [selectedTeamLeadIds, setSelectedTeamLeadIds] = useState<string[]>([]);
-  const [selectedTeamLeadObjs, setSelectedTeamLeadObjs] = useState<TeamLeadItem[]>([]);
+  const [selectedTeamLeadIds, setSelectedTeamLeadIds] = useState<string[]>([currentTeamLead.id]);
+  const [selectedTeamLeadObjs, setSelectedTeamLeadObjs] = useState<TeamLeadItem[]>([
+    {
+      id: currentTeamLead.id,
+      employeeId: currentTeamLead.employeeId,
+      name: currentTeamLead.name,
+      role: currentTeamLead.role,
+      departmentId: 'D001',
+      departmentName: currentTeamLead.department,
+      email: user?.email || '',
+    },
+  ]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [selectedEmployeeObjs, setSelectedEmployeeObjs] = useState<EmployeeItem[]>([]);
 

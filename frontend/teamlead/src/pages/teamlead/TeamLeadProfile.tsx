@@ -135,7 +135,12 @@ export const TeamLeadProfile: React.FC = () => {
                   <Camera className="w-3.5 h-3.5" /> Change Photo
                 </button>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
+              <div className="flex items-center gap-2.5 mt-1 flex-wrap">
+                <p className="text-xs text-slate-500">{user.email}</p>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs">
+                  User ID: <span className="text-sky-900">{user.id || 'EMPOO1'}</span>
+                </span>
+              </div>
             </div>
             <span className="px-3 py-1 bg-sky-100 text-sky-700 font-bold text-xs rounded-full uppercase tracking-wider flex items-center gap-1 shrink-0 self-start sm:self-auto">
               <Shield className="w-3.5 h-3.5" /> Team Lead
@@ -145,6 +150,18 @@ export const TeamLeadProfile: React.FC = () => {
           {/* Edit Form */}
           <form onSubmit={handleSubmitForm} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  User ID / Employee ID <span className="text-slate-400 font-normal">(System Identifier)</span>
+                </label>
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-800 flex items-center justify-between shadow-2xs">
+                  <span className="tracking-wide text-slate-900">{user.id || 'EMPOO1'}</span>
+                  <span className="text-[10px] font-sans font-bold uppercase bg-sky-100 text-sky-700 px-2 py-0.5 rounded">
+                    Assigned Identity
+                  </span>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
                 <div className="relative">

@@ -45,9 +45,29 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
 
   useEffect(() => {
     OrganizationService.syncFromDatabase().then(() => {
+      if (currentUser?.id) {
+        OrganizationService.addTeamLead({
+          id: currentUser.id,
+          employeeId: currentUser.employeeId || currentUser.id,
+          name: currentUser.name || 'Team Lead',
+          role: currentUser.role || `${currentUser.department || 'IT Support'} Team Lead`,
+          departmentId: 'D001',
+          departmentName: currentUser.department || 'IT Support',
+          email: (currentUser as any).email || '',
+        });
+        if (selectedTeamLeadIds.length === 0) {
+          const leadObj = OrganizationService.getTeamLeadById(currentUser.id);
+          onSelectedTeamLeadsChange([currentUser.id], leadObj ? [leadObj] : []);
+        }
+      } else {
+        const allLeads = OrganizationService.getAllTeamLeads();
+        if (allLeads.length > 0 && selectedTeamLeadIds.length === 0) {
+          onSelectedTeamLeadsChange([allLeads[0].id], [allLeads[0]]);
+        }
+      }
       setDbVersion((v) => v + 1);
     });
-  }, []);
+  }, [currentUser]);
 
   // Search state stored per Team Lead ID to allow independent search fields
   const [searchQueries, setSearchQueries] = useState<Record<string, string>>({});
@@ -282,9 +302,11 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                     </div>
 
                     {/* 4 & 7. AFTER SELECTING TEAM LEAD - Display that Team Lead's employees separately */}
-                    {leadsToDisplay
-                      .filter((lead) => selectedTeamLeadIds.includes(lead.id))
-                      .map((lead) => {
+                    {(
+                      leadsToDisplay.filter((lead) => selectedTeamLeadIds.includes(lead.id)).length > 0
+                        ? leadsToDisplay.filter((lead) => selectedTeamLeadIds.includes(lead.id))
+                        : (role === 'teamlead' && leadsToDisplay.length > 0 ? [leadsToDisplay[0]] : [])
+                    ).map((lead) => {
                         const searchQuery = searchQueries[lead.id] || '';
                         const filteredEmployees = OrganizationService.searchEmployees(
                           lead.id,
