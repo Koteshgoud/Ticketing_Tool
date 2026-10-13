@@ -10,6 +10,18 @@ export const ticketService = {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
+        const { data: allAttachments } = await supabase
+          .from('ticket_attachments')
+          .select('*');
+
+        const attMap: Record<string, { name: string; size: string }[]> = {};
+        if (allAttachments) {
+          allAttachments.forEach((att: any) => {
+            if (!attMap[att.ticket_id]) attMap[att.ticket_id] = [];
+            attMap[att.ticket_id].push({ name: att.name, size: att.size || '1 MB' });
+          });
+        }
+
         return data.map((row: any) => ({
           id: row.id,
           subject: row.subject || 'No Subject',
@@ -27,7 +39,7 @@ export const ticketService = {
           slaRemaining: row.sla_remaining || '8h remaining',
           createdAt: row.created_at || new Date().toISOString(),
           updatedAt: row.updated_at || new Date().toISOString(),
-          attachments: row.attachments || [],
+          attachments: (attMap[row.id] && attMap[row.id].length > 0) ? attMap[row.id] : (Array.isArray(row.attachments) ? row.attachments : []),
           comments: [],
           activities: [],
         }));
@@ -59,6 +71,16 @@ export const ticketService = {
           .eq('ticket_id', id)
           .order('created_at', { ascending: true });
 
+        const { data: dbAttachments } = await supabase
+          .from('ticket_attachments')
+          .select('*')
+          .eq('ticket_id', id)
+          .order('created_at', { ascending: true });
+
+        const mappedAttachments: { name: string; size: string }[] = (dbAttachments && dbAttachments.length > 0)
+          ? dbAttachments.map((a: any) => ({ name: a.name, size: a.size || '1 MB' }))
+          : (Array.isArray(data.attachments) ? data.attachments : []);
+
         return {
           id: data.id,
           subject: data.subject || 'No Subject',
@@ -76,7 +98,7 @@ export const ticketService = {
           slaRemaining: data.sla_remaining || '8h remaining',
           createdAt: data.created_at || new Date().toISOString(),
           updatedAt: data.updated_at || new Date().toISOString(),
-          attachments: data.attachments || [],
+          attachments: mappedAttachments,
           comments: (dbComments || []).map((c: any) => ({
             id: c.id,
             ticketId: c.ticket_id,
@@ -185,7 +207,8 @@ export const ticketService = {
 
   updateTicketStatus: async (id: string, status: TicketStatus): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('tickets').update({ status }).eq('id', id);
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('tickets').update({ status, updated_at: now }).eq('id', id);
       if (error) console.error('Error updating status in Supabase:', error);
       return !error;
     } catch {
@@ -195,7 +218,8 @@ export const ticketService = {
 
   assignAgent: async (id: string, agentName: string, assignedBy?: string): Promise<boolean> => {
     try {
-      const updates: Record<string, any> = { assigned_agent: agentName };
+      const now = new Date().toISOString();
+      const updates: Record<string, any> = { assigned_agent: agentName, updated_at: now };
       if (assignedBy) updates.assigned_by = assignedBy;
       const { error } = await supabase.from('tickets').update(updates).eq('id', id);
       if (error) console.error('Error assigning agent in Supabase:', error);
@@ -207,7 +231,8 @@ export const ticketService = {
 
   changePriority: async (id: string, priority: TicketPriority): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('tickets').update({ priority }).eq('id', id);
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('tickets').update({ priority, updated_at: now }).eq('id', id);
       return !error;
     } catch {
       return false;
@@ -216,9 +241,11 @@ export const ticketService = {
 
   resolveTicket: async (id: string, resolutionSummary?: string): Promise<boolean> => {
     try {
+      const now = new Date().toISOString();
       const { error } = await supabase.from('tickets').update({
         status: 'Resolved',
         resolution_summary: resolutionSummary || 'Resolved by team lead.',
+        updated_at: now,
       }).eq('id', id);
       return !error;
     } catch {
@@ -244,6 +271,7 @@ export const ticketService = {
         action: isInternal ? 'Added internal note' : 'Added reply',
         timestamp: new Date().toISOString(),
       }]);
+      await supabase.from('tickets').update({ updated_at: new Date().toISOString() }).eq('id', ticketId);
       return true;
     } catch {
       return false;
@@ -279,6 +307,34 @@ export const ticketService = {
       }]);
       return true;
     } catch {
+      return false;
+    }
+  },
+
+  addAttachment: async (ticketId: string, attachment: { name: string; size: string }): Promise<boolean> => {
+    try {
+      const now = new Date().toISOString();
+      await supabase.from('ticket_attachments').insert([{
+        id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        ticket_id: ticketId,
+        name: attachment.name,
+        size: attachment.size || '1 MB',
+        url: '',
+        created_at: now,
+      }]);
+
+      await supabase.from('ticket_activities').insert([{
+        id: `act-${Date.now()}`,
+        ticket_id: ticketId,
+        user: 'Team Lead',
+        action: `Uploaded attachment: ${attachment.name}`,
+        timestamp: now,
+      }]);
+
+      await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
+      return true;
+    } catch (e) {
+      console.warn('Error adding attachment to Supabase:', e);
       return false;
     }
   }

@@ -156,6 +156,9 @@ export const ProfilePage: React.FC = () => {
   const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isChangingPwd, setIsChangingPwd] = useState(false);
 
+  const currentSession = getCurrentSessionUser();
+  const [userId, setUserId] = useState<string>(currentSession?.id || 'usr-admin-1791538577749');
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: AdminProfileData = {
@@ -171,17 +174,33 @@ export const ProfilePage: React.FC = () => {
     setIsEditing(false);
 
     // Update current session user in localStorage
-    const session = getCurrentSessionUser();
-    if (session) {
-      setSessionUser({
-        ...session,
-        name: updated.name,
-        email: updated.email,
-        phone: updated.phone,
-        department: updated.department,
-        avatarUrl: updated.avatarUrl,
-      });
-    }
+    const activeSession = getCurrentSessionUser();
+    const targetId = activeSession?.id || userId || 'usr-admin-1791538577749';
+
+    setSessionUser({
+      ...(activeSession || {}),
+      id: targetId,
+      name: updated.name,
+      email: updated.email,
+      phone: updated.phone,
+      department: updated.department,
+      avatarUrl: updated.avatarUrl,
+      role: 'admin',
+      status: activeSession?.status || 'Active',
+    });
+
+    localStorage.setItem('platform_current_user', JSON.stringify({
+      id: targetId,
+      name: updated.name,
+      email: updated.email,
+      phone: updated.phone,
+      department: updated.department,
+      avatarUrl: updated.avatarUrl,
+      role: 'admin',
+      status: activeSession?.status || 'Active',
+    }));
+
+    window.dispatchEvent(new Event('storage'));
 
     // Sync profile changes to Supabase public.users
     try {
@@ -196,7 +215,7 @@ export const ProfilePage: React.FC = () => {
           designation: updated.role,
           updated_at: new Date().toISOString()
         })
-        .or(`email.eq.${profile.email},email.eq.${updated.email}`);
+        .or(`id.eq.${targetId},email.eq.${profile.email},email.eq.${updated.email}`);
     } catch (err) {
       console.warn('Supabase profile sync warning:', err);
     }
@@ -347,9 +366,13 @@ export const ProfilePage: React.FC = () => {
               <h2 className="text-lg font-bold text-slate-900">
                 {isEditing ? editName || 'Admin Name' : profile.name}
               </h2>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-[#0284C7] border border-sky-200/60 uppercase">
                   <ShieldCheck className="w-3.5 h-3.5 inline" /> {isEditing ? editRole : profile.role}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200 shadow-2xs">
+                  <Key className="w-3 h-3 text-[#0284C7]" />
+                  User ID: <span className="text-[#0284C7]">{userId}</span>
                 </span>
               </div>
             </div>
@@ -369,6 +392,18 @@ export const ProfilePage: React.FC = () => {
         {/* Profile Attributes / Edit Form */}
         <form onSubmit={handleSaveProfile} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-[#0284C7]" /> System User ID <span className="text-slate-400 font-normal">(Permanent Identifier)</span>
+              </label>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/90 text-xs font-mono font-bold text-slate-900 flex items-center justify-between shadow-2xs">
+                <span className="tracking-wide text-slate-900">{userId}</span>
+                <span className="text-[10.5px] uppercase font-sans font-bold bg-sky-100 text-[#0284C7] px-2.5 py-0.5 rounded-full border border-sky-200">
+                  Verified Identity
+                </span>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-slate-400" /> Full Name <span className="text-red-500">*</span>

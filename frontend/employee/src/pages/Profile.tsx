@@ -135,7 +135,10 @@ export const Profile: React.FC = () => {
             <p className="text-xs font-semibold text-slate-500">
               {isEditing ? editRole : profile.role} • {isEditing ? editDepartment : profile.department}
             </p>
-            <div className="inline-flex items-center gap-3 pt-1">
+            <div className="inline-flex items-center gap-3 pt-1 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-sky-50 text-[#0284C7] border border-sky-200">
+                User ID: {profile.employeeId}
+              </span>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -148,8 +151,8 @@ export const Profile: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          <div className="bg-sky-50 border border-sky-100 px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-[#0284C7]">
-            ID: {profile.employeeId}
+          <div className="bg-sky-50 border border-sky-200 px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-[#0284C7] shadow-2xs">
+            User ID: {profile.employeeId}
           </div>
 
           {!isEditing ? (

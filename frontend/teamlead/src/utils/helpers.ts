@@ -47,15 +47,21 @@ export const getSLABadgeStyle = (sla: SLAStatus) => {
   }
 };
 
-export const formatDate = (dateString: string) => {
+export const formatDate = (dateString?: string) => {
   if (!dateString) return '';
-  const date = new Date(dateString);
+  let s = dateString;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) && !s.includes('Z') && !s.includes('+')) {
+    s = s.replace(' ', 'T') + 'Z';
+  }
+  const date = new Date(s);
   if (isNaN(date.getTime())) return dateString;
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: true,
   }).format(date);
 };
 

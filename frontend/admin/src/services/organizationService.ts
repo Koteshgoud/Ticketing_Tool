@@ -58,7 +58,20 @@ export const OrganizationService = {
   },
 
   getEmployeesByTeamLead(teamLeadId: string): EmployeeItem[] {
-    return EMPLOYEES.filter((emp) => emp.teamLeadId === teamLeadId);
+    const lead = this.getTeamLeadById(teamLeadId);
+    const byDirectId = EMPLOYEES.filter((emp) => emp.teamLeadId && emp.teamLeadId === teamLeadId);
+    if (byDirectId.length > 0) return byDirectId;
+
+    if (lead) {
+      const leadDept = (lead.departmentName || '').toLowerCase();
+      const byDept = EMPLOYEES.filter((emp) => {
+        const empDept = (emp.departmentName || '').toLowerCase();
+        return empDept === leadDept || (empDept.includes('it') && leadDept.includes('it'));
+      });
+      if (byDept.length > 0) return byDept;
+    }
+
+    return EMPLOYEES;
   },
 
   searchEmployees(teamLeadId: string, query: string): EmployeeItem[] {
@@ -182,7 +195,7 @@ export const OrganizationService = {
           } else {
             TEAM_LEADS.push(leadItem);
           }
-        } else if (roleLower === 'employee') {
+        } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
           const empItem: EmployeeItem = {
             id: u.id,
             employeeId: u.id,

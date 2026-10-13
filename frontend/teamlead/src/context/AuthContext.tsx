@@ -177,18 +177,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUserProfile = (updatedData: Partial<User>) => {
-    if (currentUser.id) {
+    const mergedUser = { ...currentUser, ...updatedData };
+
+    if (currentUser.id || currentUser.email) {
       const dbUpdates: Record<string, any> = {};
-      if (updatedData.name) dbUpdates.name = updatedData.name;
-      if (updatedData.phone) dbUpdates.phone = updatedData.phone;
-      if (updatedData.department) dbUpdates.department = updatedData.department;
-      if (updatedData.avatar) dbUpdates.avatar = updatedData.avatar;
-      supabase.from('users').update(dbUpdates).eq('id', currentUser.id).then(() => {});
+      if (updatedData.name !== undefined) dbUpdates.name = updatedData.name;
+      if (updatedData.phone !== undefined) dbUpdates.phone = updatedData.phone;
+      if (updatedData.department !== undefined) dbUpdates.department = updatedData.department;
+      if (updatedData.location !== undefined) dbUpdates.location = updatedData.location;
+      if (updatedData.team !== undefined) dbUpdates.team = updatedData.team;
+      if (updatedData.avatar !== undefined) dbUpdates.avatar = updatedData.avatar || null;
+      dbUpdates.updated_at = new Date().toISOString();
+
+      if (currentUser.id) {
+        supabase.from('users').update(dbUpdates).eq('id', currentUser.id).then(() => {});
+      } else if (currentUser.email) {
+        supabase.from('users').update(dbUpdates).eq('email', currentUser.email.toLowerCase()).then(() => {});
+      }
     }
+
     setUsers((prev) =>
-      prev.map((u) => (u.id === currentUser.id ? { ...u, ...updatedData } : u))
+      prev.map((u) => (u.id === currentUser.id || u.email === currentUser.email ? { ...u, ...updatedData } : u))
     );
-    setCurrentUser((prev) => ({ ...prev, ...updatedData }));
+    setCurrentUser(mergedUser);
+
+    try {
+      localStorage.setItem('platform_current_user', JSON.stringify(mergedUser));
+      const authRaw = localStorage.getItem('itsm_teamlead_auth');
+      if (authRaw) {
+        const parsed = JSON.parse(authRaw);
+        localStorage.setItem('itsm_teamlead_auth', JSON.stringify({ ...parsed, user: mergedUser }));
+      }
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
   };
 
   const addUser = async (userData: {
