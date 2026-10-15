@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
-import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { loginUser, getCurrentSessionUser } from '../../services/unifiedAuth';
@@ -24,6 +24,8 @@ export const LoginPage: React.FC = () => {
   const stateData = location.state as { registeredEmail?: string; registrationSuccess?: string } | null;
   const [email, setEmail] = useState(stateData?.registeredEmail || '');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; auth?: string }>({});
   const [successBanner, setSuccessBanner] = useState<string | null>(
     stateData?.registrationSuccess || null
@@ -57,7 +59,7 @@ export const LoginPage: React.FC = () => {
 
     setIsSubmitting(true);
     setTimeout(async () => {
-      const result = await loginUser(email, password);
+      const result = await loginUser(email, password, rememberDevice);
       setIsSubmitting(false);
 
       if (!result.success || !result.user) {
@@ -156,24 +158,37 @@ export const LoginPage: React.FC = () => {
                   Forgot Password?
                 </Link>
               </div>
-              <Input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password || errors.auth) setErrors({ ...errors, password: undefined, auth: undefined });
-                }}
-                error={errors.password}
-                icon={<Lock className="w-4 h-4" />}
-              />
+              <div className="relative flex items-center">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password || errors.auth) setErrors({ ...errors, password: undefined, auth: undefined });
+                  }}
+                  error={errors.password}
+                  icon={<Lock className="w-4 h-4" />}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer p-0.5"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between pt-1">
               <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600">
                 <input
                   type="checkbox"
-                  defaultChecked
+                  checked={rememberDevice}
+                  onChange={(e) => setRememberDevice(e.target.checked)}
                   className="rounded border-slate-300 text-[#0284C7] focus:ring-[#0284C7]"
                 />
                 Remember this device

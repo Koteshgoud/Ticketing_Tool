@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -45,6 +45,12 @@ export const AddUserPage: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  useEffect(() => {
+    OrganizationService.syncFromDatabase().then(() => {
+      setFormData(prev => ({ ...prev }));
+    });
+  }, []);
   const [shareableLink, setShareableLink] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCreds, setCopiedCreds] = useState(false);
@@ -77,16 +83,17 @@ export const AddUserPage: React.FC = () => {
       }
     }
 
+    const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!formData.email.trim()) {
       newErrors.email = 'Email address is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (!EMAIL_REGEX.test(formData.email.trim())) {
       newErrors.email = 'Invalid email address format (e.g. name@company.com)';
     }
 
     if (!formData.phone.trim()) {
       newErrors.phone = 'Phone number is required';
-    } else if (!/^[+]*[(]{0,1}[0-9]{1,4}[)]{0,1}[-\s./0-9]*$/.test(formData.phone)) {
-      newErrors.phone = 'Invalid phone number format';
+    } else if (formData.phone.length !== 10) {
+      newErrors.phone = 'Phone number must be exactly 10 digits';
     }
 
     if (!formData.department) {
@@ -101,19 +108,17 @@ export const AddUserPage: React.FC = () => {
       newErrors.teamLead = 'Team Lead selection is required';
     }
 
-    if (!formData.sendEmailInvite || formData.password) {
-      if (!formData.password) {
-        newErrors.password = 'Password is required when not sending auto-invite';
-      } else {
-        const pwdRes = validatePassword(formData.password);
-        if (!pwdRes.isValid) {
-          newErrors.password = 'Password does not meet all security requirements';
-        }
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+    } else {
+      const pwdRes = validatePassword(formData.password);
+      if (!pwdRes.isValid) {
+        newErrors.password = 'Password does not meet all security requirements';
       }
+    }
 
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = 'Password and Confirm Password do not match';
-      }
+    if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'Password and Confirm Password do not match';
     }
 
     setErrors(newErrors);
@@ -224,11 +229,20 @@ export const AddUserPage: React.FC = () => {
     setIsSuccess(false);
   };
 
+  const handleCancel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resetForm();
+    navigate('/admin/dashboard');
+  };
+
   const currentDepartmentName = formData.department === 'Others'
     ? (formData.customDepartment.trim() || 'Other')
     : (formData.department || 'IT Support');
 
-  const availableTeamLeads = OrganizationService.getTeamLeadsByDepartment(currentDepartmentName);
+  const deptLeads = OrganizationService.getTeamLeadsByDepartment(currentDepartmentName);
+  const allLeads = OrganizationService.getAllTeamLeads();
+  const availableTeamLeads = deptLeads.length > 0 ? deptLeads : allLeads;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -423,11 +437,17 @@ export const AddUserPage: React.FC = () => {
               {/* Phone Number */}
               <Input
                 label="Phone Number *"
-                placeholder="+1 (555) 000-0000"
+                placeholder="10-digit mobile number"
+                maxLength={10}
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setFormData({ ...formData, phone: digits });
+                  if (errors.phone) setErrors({ ...errors, phone: undefined });
+                }}
                 error={errors.phone}
                 icon={<Phone className="w-4 h-4" />}
+                helperText="Must be exactly 10 digits"
               />
 
               {/* Department */}
@@ -558,49 +578,30 @@ export const AddUserPage: React.FC = () => {
                 />
               </div>
             </div>
-          </Card>
 
-          {/* Linking / Invitation Options */}
-          <Card title="Invitation & Access Method">
-            <div className="space-y-4">
-              <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:border-slate-300 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={formData.sendEmailInvite}
-                  onChange={(e) => setFormData({ ...formData, sendEmailInvite: e.target.checked })}
-                  className="mt-0.5 rounded border-slate-300 text-[#2563EB] focus:ring-[#2563EB]"
-                />
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                    <Send className="w-3.5 h-3.5 text-[#2563EB]" /> Send Email Invitation & Share Link
-                  </span>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Automatically dispatches an onboard invitation email containing a direct login link and password setup.
-                  </p>
-                </div>
-              </label>
-
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                <div className="text-xs text-slate-500 flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5 text-slate-400" /> All fields marked with * are required.
-                </div>
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    type="button"
-                    onClick={() => navigate('/admin/dashboard')}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="primary"
-                    type="submit"
-                    disabled={isSubmitting}
-                    icon={<UserPlus className="w-4 h-4" />}
-                  >
-                    {isSubmitting ? 'Creating User...' : 'Add User'}
-                  </Button>
-                </div>
+            {/* Form Actions Footer */}
+            <div className="flex items-center justify-between pt-4 mt-6 border-t border-slate-200">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <Info className="w-3.5 h-3.5 text-slate-400" /> All fields marked with * are required.
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={handleCancel}
+                  className="border-slate-200 text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={isSubmitting}
+                  icon={<UserPlus className="w-4 h-4" />}
+                  className="bg-[#0284C7] text-white font-semibold"
+                >
+                  {isSubmitting ? 'Creating User...' : 'Add User'}
+                </Button>
               </div>
             </div>
           </Card>

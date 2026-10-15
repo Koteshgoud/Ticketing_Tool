@@ -182,7 +182,7 @@ export const OrganizationService = {
         if (roleLower === 'teamlead' || roleLower === 'team lead') {
           const leadItem: TeamLeadItem = {
             id: u.id,
-            employeeId: u.id,
+            employeeId: u.employee_id || u.id,
             name: u.name,
             role: `${deptName} Team Lead`,
             departmentId: deptObj.id,
@@ -198,7 +198,7 @@ export const OrganizationService = {
         } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
           const empItem: EmployeeItem = {
             id: u.id,
-            employeeId: u.id,
+            employeeId: u.employee_id || u.id,
             name: u.name,
             role: u.designation || 'Support Specialist',
             teamLeadId: u.team_lead_id || u.team_lead || '',

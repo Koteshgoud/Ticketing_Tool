@@ -6,9 +6,9 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
-import type { Ticket } from '../../types';
+import type { Ticket, TicketPriority, TicketStatus } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { Search, RefreshCw, Eye } from 'lucide-react';
+import { Search, RefreshCw, Eye, Edit2, Trash2, AlertTriangle, X } from 'lucide-react';
 
 export const AllTicketsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,6 +19,29 @@ export const AllTicketsPage: React.FC = () => {
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+
+  // Edit Ticket Modal State
+  const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
+  const [editFormData, setEditFormData] = useState<{
+    title: string;
+    description: string;
+    department: string;
+    priority: TicketPriority;
+    status: TicketStatus;
+    assignedTo: string;
+  }>({
+    title: '',
+    description: '',
+    department: 'IT Support',
+    priority: 'Medium',
+    status: 'Open',
+    assignedTo: '',
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Delete Ticket Modal State
+  const [deletingTicket, setDeletingTicket] = useState<Ticket | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchTickets = async () => {
     setIsLoading(true);
@@ -45,7 +68,11 @@ export const AllTicketsPage: React.FC = () => {
     }
 
     if (departmentFilter !== 'all') {
-      result = result.filter(t => t.department.toLowerCase() === departmentFilter.toLowerCase());
+      const df = departmentFilter.toLowerCase();
+      result = result.filter(t => {
+        const d = (t.department || '').toLowerCase();
+        return d === df || d.includes(df);
+      });
     }
 
     if (statusFilter !== 'all') {
@@ -64,6 +91,60 @@ export const AllTicketsPage: React.FC = () => {
 
     setFilteredTickets(result);
   }, [search, departmentFilter, statusFilter, priorityFilter, tickets]);
+
+  const handleOpenEdit = (ticket: Ticket) => {
+    setEditingTicket(ticket);
+    setEditFormData({
+      title: ticket.title || '',
+      description: ticket.description || '',
+      department: ticket.department || 'IT Support',
+      priority: ticket.priority || 'Medium',
+      status: ticket.status || 'Open',
+      assignedTo: ticket.assignedTo || '',
+    });
+  };
+
+  const handleSaveEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTicket) return;
+    setIsSavingEdit(true);
+    try {
+      const updated = await AdminApiService.updateTicket(
+        editingTicket.id,
+        {
+          title: editFormData.title,
+          description: editFormData.description,
+          department: editFormData.department,
+          priority: editFormData.priority,
+          status: editFormData.status,
+          assignedTo: editFormData.assignedTo || 'Unassigned',
+        },
+        'Admin edited ticket details from All Tickets directory'
+      );
+      setTickets(prev => prev.map(t => (t.id === editingTicket.id ? { ...t, ...updated } : t)));
+      setEditingTicket(null);
+    } catch (err) {
+      console.error('Failed to update ticket:', err);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingTicket) return;
+    setIsDeleting(true);
+    try {
+      const success = await AdminApiService.deleteTicket(deletingTicket.id);
+      if (success) {
+        setTickets(prev => prev.filter(t => t.id !== deletingTicket.id));
+      }
+      setDeletingTicket(null);
+    } catch (err) {
+      console.error('Failed to delete ticket:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const columns: Column<Ticket>[] = [
     {
@@ -120,19 +201,38 @@ export const AllTicketsPage: React.FC = () => {
     },
     {
       header: 'Updated Time',
-      cell: (row) => <span className="text-[11.5px] text-slate-500">{row.createdAt}</span>
+      cell: (row) => <span className="text-[11.5px] text-slate-500">{row.updatedAt || row.createdAt}</span>
     },
     {
       header: 'Actions',
       cell: (row) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<Eye className="w-3.5 h-3.5" />}
-          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=all-tickets`)}
-        >
-          View
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Eye className="w-3.5 h-3.5" />}
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=all-tickets`)}
+            title="View details"
+          >
+            View
+          </Button>
+          <button
+            type="button"
+            onClick={() => handleOpenEdit(row)}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer"
+            title="Edit ticket"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeletingTicket(row)}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+            title="Delete ticket"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )
     }
   ];
@@ -224,6 +324,172 @@ export const AllTicketsPage: React.FC = () => {
           isLoading={isLoading}
         />
       </Card>
+
+      {/* Edit Ticket Modal */}
+      {editingTicket && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 font-sans space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-[#0284C7]" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Edit Ticket ({editingTicket.ticketNumber})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingTicket(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Subject / Title</label>
+                <Input
+                  required
+                  value={editFormData.title}
+                  onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                  placeholder="Ticket Subject"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
+                  <Select
+                    value={editFormData.department}
+                    onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                    options={[
+                      { value: 'IT Support', label: 'IT Support' },
+                      { value: 'HR', label: 'HR' },
+                      { value: 'Finance', label: 'Finance' },
+                      { value: 'Operations', label: 'Operations' },
+                      { value: 'Sales', label: 'Sales' },
+                      { value: 'Marketing', label: 'Marketing' },
+                      { value: 'Legal', label: 'Legal' },
+                      { value: 'Facilities', label: 'Facilities' },
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Priority</label>
+                  <Select
+                    value={editFormData.priority}
+                    onChange={(e) => setEditFormData({ ...editFormData, priority: e.target.value as TicketPriority })}
+                    options={[
+                      { value: 'Low', label: 'Low' },
+                      { value: 'Medium', label: 'Medium' },
+                      { value: 'High', label: 'High' },
+                      { value: 'Urgent', label: 'Urgent' },
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
+                  <Select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as TicketStatus })}
+                    options={[
+                      { value: 'Open', label: 'Open' },
+                      { value: 'In Progress', label: 'In Progress' },
+                      { value: 'Escalated', label: 'Escalated' },
+                      { value: 'Resolved', label: 'Resolved' },
+                      { value: 'Closed', label: 'Closed' },
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Assigned Agent / Team</label>
+                  <Input
+                    value={editFormData.assignedTo}
+                    onChange={(e) => setEditFormData({ ...editFormData, assignedTo: e.target.value })}
+                    placeholder="Assigned Agent Name"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+                <textarea
+                  rows={3}
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  placeholder="Ticket description details..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:border-[#0284C7]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingTicket(null)}
+                  className="border-slate-200 text-slate-600"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={isSavingEdit}
+                  className="bg-[#0284C7] text-white font-semibold"
+                >
+                  {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Ticket Confirmation Modal */}
+      {deletingTicket && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 font-sans space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Ticket</h3>
+                <p className="text-xs text-slate-500 font-medium">Permanent action cannot be undone</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to permanently delete ticket <strong className="text-slate-900 font-semibold">{deletingTicket.ticketNumber}</strong> ({deletingTicket.title})? This will remove all associated activities, comments, and attachments.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeletingTicket(null)}
+                className="border-slate-200 text-slate-600 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Ticket'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

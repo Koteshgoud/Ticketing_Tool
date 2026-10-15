@@ -2,6 +2,36 @@ import type { User, Ticket, DashboardStats, AddUserFormData, UserRole, UserDepar
 import { getCurrentSessionUser } from './unifiedAuth';
 import { supabase } from './supabaseClient';
 
+export function computeDynamicSlaStatus(raw?: string, explicitDue?: string, ticketStatus?: string): SLAStatus {
+  const normStatus = (ticketStatus || '').toLowerCase();
+  if (normStatus === 'resolved' || normStatus === 'closed') {
+    return 'Normal';
+  }
+
+  const rawLower = (raw || '').toLowerCase();
+  if (rawLower.includes('breach')) return 'SLA Breached';
+
+  if (explicitDue) {
+    let dueTimeStr = explicitDue;
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(dueTimeStr) && !dueTimeStr.includes('Z') && !dueTimeStr.includes('+')) {
+      dueTimeStr = dueTimeStr.replace(' ', 'T') + 'Z';
+    }
+    const due = new Date(dueTimeStr);
+    if (!isNaN(due.getTime())) {
+      const diffMs = due.getTime() - Date.now();
+      if (diffMs < 0) {
+        return 'SLA Breached';
+      }
+      if (diffMs <= 4 * 60 * 60 * 1000) {
+        return 'SLA Risk';
+      }
+    }
+  }
+
+  if (rawLower.includes('risk')) return 'SLA Risk';
+  return 'Normal';
+}
+
 function mapSlaStatus(raw?: string): SLAStatus {
   if (!raw) return 'Normal';
   const lower = raw.toLowerCase();
@@ -69,14 +99,21 @@ export const mockTickets: Ticket[] = [];
 export const AdminApiService = {
   async getDashboardStats(): Promise<DashboardStats> {
     try {
-      const { data: dbTickets } = await supabase.from('tickets').select('id, status, sla_status');
+      const { data: dbTickets } = await supabase.from('tickets').select('id, status, sla_status, created_at, priority, sla_due_at, due_date');
       const { data: dbUsers } = await supabase.from('users').select('id');
 
       const tickets: any[] = dbTickets || [];
       const openTickets = tickets.filter(t => (t.status || '').toLowerCase() === 'open').length;
       const escalatedTickets = tickets.filter(t => (t.status || '').toLowerCase() === 'escalated').length;
-      const slaRiskCount = tickets.filter(t => (t.sla_status || '').toLowerCase().includes('risk')).length;
-      const slaBreachedCount = tickets.filter(t => (t.sla_status || '').toLowerCase().includes('breach')).length;
+
+      let slaRiskCount = 0;
+      let slaBreachedCount = 0;
+      tickets.forEach((t) => {
+        const calculatedDue = calculateSLADeadline(t.created_at, t.priority, t.sla_due_at || t.due_date);
+        const dynamicSla = computeDynamicSlaStatus(t.sla_status, calculatedDue, t.status);
+        if (dynamicSla === 'SLA Risk') slaRiskCount++;
+        else if (dynamicSla === 'SLA Breached') slaBreachedCount++;
+      });
       const resolvedTodayCount = tickets.filter(t => ['resolved', 'closed'].includes((t.status || '').toLowerCase())).length;
 
       return {
@@ -112,7 +149,7 @@ export const AdminApiService = {
       if (!error && dbUsers) {
         return dbUsers.map((u: any) => ({
           id: u.id,
-          employeeId: u.id,
+          employeeId: u.employee_id || u.id,
           name: u.name || (u.email ? u.email.split('@')[0] : 'User'),
           email: u.email,
           phone: u.phone || '+1 (555) 000-0000',
@@ -335,25 +372,29 @@ export const AdminApiService = {
           });
         }
 
-        const mapped: Ticket[] = dbTickets.map((t: any) => ({
-          id: t.id,
-          ticketNumber: t.id,
-          title: t.subject || 'No Subject',
-          description: t.description || '',
-          requesterName: t.employee || 'User',
-          requesterEmail: t.employee_email || '',
-          assignedTo: t.assigned_agent || 'Unassigned',
-          assignedTeamLead: t.assigned_by || 'Kotesh Goud (IT Support Team Lead)',
-          department: t.department || 'IT Support',
-          category: t.category || 'General Support',
-          priority: t.priority || 'Medium',
-          status: t.status || 'Open',
-          slaStatus: mapSlaStatus(t.sla_status),
-          createdAt: formatDateTime(t.created_at),
-          updatedAt: formatDateTime(t.updated_at || t.created_at),
-          dueDate: calculateSLADeadline(t.created_at, t.priority, t.sla_due_at || t.due_date),
-          attachments: (attMap[t.id] && attMap[t.id].length > 0) ? attMap[t.id] : (Array.isArray(t.attachments) ? t.attachments : []),
-        }));
+        const mapped: Ticket[] = dbTickets.map((t: any) => {
+          const calculatedDue = calculateSLADeadline(t.created_at, t.priority, t.sla_due_at || t.due_date);
+          const dynamicSla = computeDynamicSlaStatus(t.sla_status, calculatedDue, t.status);
+          return {
+            id: t.id,
+            ticketNumber: t.id,
+            title: t.subject || 'No Subject',
+            description: t.description || '',
+            requesterName: t.employee || 'User',
+            requesterEmail: t.employee_email || '',
+            assignedTo: t.assigned_agent || 'Unassigned',
+            assignedTeamLead: t.assigned_by || 'Kotesh Goud (IT Support Team Lead)',
+            department: t.department || 'IT Support',
+            category: t.category || 'General Support',
+            priority: t.priority || 'Medium',
+            status: t.status || 'Open',
+            slaStatus: dynamicSla,
+            createdAt: formatDateTime(t.created_at),
+            updatedAt: formatDateTime(t.updated_at || t.created_at),
+            dueDate: calculatedDue,
+            attachments: (attMap[t.id] && attMap[t.id].length > 0) ? attMap[t.id] : (Array.isArray(t.attachments) ? t.attachments : []),
+          };
+        });
 
         if (!filterType || filterType === 'all') return mapped;
         if (filterType === 'open') return mapped.filter(t => (t.status || '').toLowerCase() === 'open');
@@ -394,6 +435,9 @@ export const AdminApiService = {
           ? dbAttachments.map((a: any) => a.size && a.size !== 'N/A' ? `${a.name} (${a.size})` : a.name)
           : (Array.isArray(data.attachments) ? data.attachments : []);
 
+        const calculatedDue = calculateSLADeadline(data.created_at, data.priority, data.sla_due_at || data.due_date);
+        const dynamicSla = computeDynamicSlaStatus(data.sla_status, calculatedDue, data.status);
+
         return {
           id: data.id,
           ticketNumber: data.id,
@@ -407,10 +451,10 @@ export const AdminApiService = {
           category: data.category || 'General Support',
           priority: data.priority || 'Medium',
           status: data.status || 'Open',
-          slaStatus: mapSlaStatus(data.sla_status),
+          slaStatus: dynamicSla,
           createdAt: formatDateTime(data.created_at),
           updatedAt: formatDateTime(data.updated_at || data.created_at),
-          dueDate: calculateSLADeadline(data.created_at, data.priority, data.sla_due_at || data.due_date),
+          dueDate: calculatedDue,
           attachments: mappedAttachments,
           history: (dbActivities || []).map((a: any) => ({
             id: a.id,
@@ -522,17 +566,17 @@ export const AdminApiService = {
         size: (attStr.includes('(') ? attStr.split('(')[1].replace(')', '') : 'N/A'),
         url: '',
       }));
-      supabase.from('ticket_attachments').insert(attRows).then(() => {});
+      await supabase.from('ticket_attachments').insert(attRows);
     }
 
-    // Log initial activity in background without blocking user
-    supabase.from('ticket_activities').insert([{
+    // Log initial activity
+    await supabase.from('ticket_activities').insert([{
       id: `act-${Date.now()}`,
       ticket_id: ticketId,
       user: creatorName,
       action: 'Ticket created',
       timestamp: new Date().toISOString(),
-    }]).then(() => {});
+    }]);
 
     return newTicket;
   },
@@ -647,5 +691,25 @@ export const AdminApiService = {
     await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
 
     return this.getTicketById(ticketId);
+  },
+
+  async deleteTicket(ticketId: string): Promise<boolean> {
+    try {
+      // Cascade delete associated records from Supabase
+      await supabase.from('ticket_activities').delete().eq('ticket_id', ticketId);
+      await supabase.from('ticket_attachments').delete().eq('ticket_id', ticketId);
+      await supabase.from('ticket_comments').delete().eq('ticket_id', ticketId);
+      await supabase.from('notifications').delete().eq('ticket_id', ticketId);
+
+      const { error } = await supabase.from('tickets').delete().eq('id', ticketId);
+      if (error) {
+        console.error('Error deleting ticket from Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('deleteTicket exception:', err);
+      return false;
+    }
   },
 };

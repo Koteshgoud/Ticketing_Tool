@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, ShieldCheck, Building2, Camera, Upload, Edit3, Save, X, Mail, Phone, Lock, CheckCircle2, AlertCircle, Key } from 'lucide-react';
+import { User, ShieldCheck, Building2, Camera, Upload, Edit3, Save, X, Mail, Phone, Lock, CheckCircle2, AlertCircle, Key, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { supabase } from '../services/supabaseClient';
 import { getCurrentSessionUser, setSessionUser } from '../services/unifiedAuth';
+
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 export interface AdminProfileData {
   name: string;
@@ -142,31 +144,90 @@ export const ProfilePage: React.FC = () => {
     setEditDepartment(profile.department);
     setEditPhone(profile.phone);
     setEditAvatarUrl(profile.avatarUrl || '');
+    setEmailError(null);
+    setPhoneError(null);
     setIsEditing(true);
   };
 
   const cancelEditing = () => {
+    setEmailError(null);
+    setPhoneError(null);
     setIsEditing(false);
   };
 
-  // Password Change State
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isChangingPwd, setIsChangingPwd] = useState(false);
+  // Validation error states
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const currentSession = getCurrentSessionUser();
-  const [userId, setUserId] = useState<string>(currentSession?.id || 'usr-admin-1791538577749');
+  const [userId] = useState<string>(currentSession?.id || 'usr-admin-1791538577749');
+
+  const handleRemovePhoto = async () => {
+    setEditAvatarUrl('');
+    const updated = { ...profile, avatarUrl: '' };
+    saveAdminProfile(updated);
+    setProfile(updated);
+    localStorage.removeItem('admin_profile_avatar');
+
+    const activeSession = getCurrentSessionUser();
+    if (activeSession) {
+      setSessionUser({
+        ...activeSession,
+        avatarUrl: '',
+      });
+      localStorage.setItem('platform_current_user', JSON.stringify({
+        ...activeSession,
+        avatarUrl: '',
+      }));
+      window.dispatchEvent(new Event('storage'));
+    }
+
+    try {
+      const targetId = activeSession?.id || userId || 'usr-admin-1791538577749';
+      await supabase
+        .from('users')
+        .update({
+          avatar: null,
+          updated_at: new Date().toISOString()
+        })
+        .or(`id.eq.${targetId},email.eq.${profile.email}`);
+    } catch (err) {
+      console.warn('Remove avatar error:', err);
+    }
+    setToastMessage('Profile photo removed.');
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 1. Email format validation
+    const cleanEmail = editEmail.trim();
+    if (!cleanEmail) {
+      setEmailError('Email address is required.');
+      return;
+    }
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setEmailError('Invalid email format. Please enter a valid address (e.g. name@company.com). Comma or invalid domain rejected.');
+      return;
+    }
+    setEmailError(null);
+
+    // 2. Mobile number validation (10 digits limit)
+    const cleanPhone = editPhone.trim();
+    if (cleanPhone && cleanPhone.length !== 10) {
+      setPhoneError('Contact mobile number must be exactly 10 digits.');
+      return;
+    }
+    setPhoneError(null);
+
     const updated: AdminProfileData = {
       name: editName.trim() || profile.name,
-      email: editEmail.trim() || profile.email,
+      email: cleanEmail || profile.email,
       role: editRole.trim() || profile.role,
       department: editDepartment.trim() || profile.department,
-      phone: editPhone.trim() || profile.phone,
+      phone: cleanPhone,
       avatarUrl: editAvatarUrl,
     };
     saveAdminProfile(updated);
@@ -219,41 +280,9 @@ export const ProfilePage: React.FC = () => {
     } catch (err) {
       console.warn('Supabase profile sync warning:', err);
     }
-  };
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPwdMsg(null);
-
-    if (!newPassword || newPassword.length < 8) {
-      setPwdMsg({ type: 'error', text: 'New password must be at least 8 characters long.' });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPwdMsg({ type: 'error', text: 'New password and confirmation do not match.' });
-      return;
-    }
-
-    setIsChangingPwd(true);
-    try {
-      // 1. Update in Supabase Auth
-      await supabase.auth.updateUser({ password: newPassword });
-
-      // 2. Update in PostgreSQL public.users
-      await supabase
-        .from('users')
-        .update({ password: newPassword, updated_at: new Date().toISOString() })
-        .eq('email', profile.email);
-
-      setPwdMsg({ type: 'success', text: 'Password successfully updated in your account and Supabase Auth.' });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err: any) {
-      setPwdMsg({ type: 'error', text: err?.message || 'Failed to update password.' });
-    } finally {
-      setIsChangingPwd(false);
-    }
+    setToastMessage('Profile details saved successfully.');
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -331,6 +360,14 @@ export const ProfilePage: React.FC = () => {
         )}
       </div>
 
+      {/* Toast Alert */}
+      {toastMessage && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium flex items-center gap-2 max-w-3xl">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Main Profile Card */}
       <div className="max-w-3xl bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-6">
         {/* User Identity Header with Profile Avatar Support */}
@@ -352,14 +389,26 @@ export const ProfilePage: React.FC = () => {
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:text-[#0284C7] hover:border-[#0284C7] shadow-xs cursor-pointer transition-all"
-                title="Upload profile photo from computer"
-              >
-                <Camera className="w-4 h-4 text-[#0284C7]" />
-              </button>
+              <div className="absolute -bottom-1 -right-1 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:text-[#0284C7] hover:border-[#0284C7] shadow-xs cursor-pointer transition-all"
+                  title="Upload profile photo from computer"
+                >
+                  <Camera className="w-3.5 h-3.5 text-[#0284C7]" />
+                </button>
+                {displayAvatar && (
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    className="p-1.5 rounded-full bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 shadow-xs cursor-pointer transition-all"
+                    title="Remove profile photo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div>
@@ -378,15 +427,28 @@ export const ProfilePage: React.FC = () => {
             </div>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
-          >
-            <Upload className="w-3.5 h-3.5 mr-1.5 text-[#0284C7]" />
-            Upload Photo from Computer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
+            >
+              <Upload className="w-3.5 h-3.5 mr-1.5 text-[#0284C7]" />
+              Upload Photo
+            </Button>
+            {displayAvatar && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRemovePhoto}
+                className="border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                Remove Photo
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Profile Attributes / Edit Form */}
@@ -431,8 +493,12 @@ export const ProfilePage: React.FC = () => {
                   type="email"
                   required
                   value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                  placeholder="Enter email address"
+                  onChange={(e) => {
+                    setEditEmail(e.target.value);
+                    if (emailError) setEmailError(null);
+                  }}
+                  placeholder="Enter valid email (e.g. a.ronda@gmail.com)"
+                  error={emailError || undefined}
                 />
               ) : (
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-900">
@@ -483,18 +549,25 @@ export const ProfilePage: React.FC = () => {
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-slate-400" /> Contact Number
+                <Phone className="w-3.5 h-3.5 text-slate-400" /> Contact Number (10 Digits)
               </label>
               {isEditing ? (
                 <Input
                   type="tel"
+                  maxLength={10}
                   value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  placeholder="Enter contact number"
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                    setEditPhone(digits);
+                    if (phoneError) setPhoneError(null);
+                  }}
+                  placeholder="10-digit mobile number"
+                  error={phoneError || undefined}
+                  helperText="Maximum 10 numerical digits limit"
                 />
               ) : (
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-900">
-                  {profile.phone}
+                  {profile.phone || 'Not provided'}
                 </div>
               )}
             </div>
@@ -519,75 +592,6 @@ export const ProfilePage: React.FC = () => {
               </Button>
             </div>
           )}
-        </form>
-      </div>
-
-      {/* Security & Password Change Section */}
-      <div className="max-w-3xl bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-5">
-        <div className="border-b border-slate-100 pb-4">
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <Lock className="w-4 h-4 text-[#0284C7]" /> Security & Password Management
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Update your account password securely. Changes will take effect immediately across all sessions and Supabase Auth.
-          </p>
-        </div>
-
-        {pwdMsg && (
-          <div className={`p-3 rounded-xl border flex items-center gap-2 text-xs font-medium ${
-            pwdMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
-          }`}>
-            {pwdMsg.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            )}
-            {pwdMsg.text}
-          </div>
-        )}
-
-        <form onSubmit={handlePasswordChange} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-slate-400" /> New Password <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="At least 8 characters"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-slate-400" /> Confirm New Password <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="Re-enter new password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-[11px] text-slate-400">
-              Must contain minimum 8 characters with letters and numbers.
-            </span>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={isChangingPwd}
-              className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold text-xs py-2 px-4 shadow-2xs"
-            >
-              {isChangingPwd ? 'Updating Password...' : 'Update Password'}
-            </Button>
-          </div>
         </form>
       </div>
     </div>

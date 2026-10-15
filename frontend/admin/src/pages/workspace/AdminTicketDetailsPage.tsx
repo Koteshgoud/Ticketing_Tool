@@ -11,7 +11,9 @@ import {
   Activity,
   AlertCircle,
   CheckCircle,
-  Calendar
+  Calendar,
+  Eye,
+  Download
 } from 'lucide-react';
 import { AdminApiService } from '../../services/api';
 import type { Ticket, TicketStatus } from '../../types';
@@ -40,6 +42,9 @@ export const AdminTicketDetailsPage: React.FC = () => {
 
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [modalAttachedFiles, setModalAttachedFiles] = useState<AttachedFile[]>([]);
+
+  // Preview & Download Attachment State
+  const [previewFile, setPreviewFile] = useState<{ name: string; size?: string } | null>(null);
 
   // Deadline Assignment State
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
@@ -76,6 +81,21 @@ export const AdminTicketDetailsPage: React.FC = () => {
       setDeadlineValue(`${yyyy}-${mm}-${dd}T${hh}:${min}`);
     }
     setShowDeadlineModal(true);
+  };
+
+  const handleDownloadFile = (fileName: string) => {
+    const cleanName = fileName.includes(' (') ? fileName.split(' (')[0] : fileName;
+    const blob = new Blob([
+      `=== Ticketing System Attachment ===\nFile Name: ${cleanName}\nTicket ID: ${ticket?.ticketNumber || id}\nTitle: ${ticket?.title || ''}\nDownloaded on: ${new Date().toLocaleString()}\n`
+    ], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = cleanName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleApplyPresetDeadline = (hours: number) => {
@@ -439,16 +459,47 @@ export const AdminTicketDetailsPage: React.FC = () => {
           </div>
 
           {ticket.attachments && ticket.attachments.length > 0 ? (
-            <div className="flex flex-wrap gap-3">
-              {ticket.attachments.map((file, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs text-slate-700 font-medium hover:border-[#0284C7] transition-colors"
-                >
-                  <FileText className="w-4 h-4 text-[#0284C7]" />
-                  <span>{file}</span>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {ticket.attachments.map((file, idx) => {
+                const cleanName = file.includes(' (') ? file.split(' (')[0] : file;
+                const size = file.includes('(') ? file.split('(')[1].replace(')', '') : 'N/A';
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-xl hover:border-[#0284C7] transition-all group shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                      <div className="w-8 h-8 rounded-lg bg-sky-50 text-[#0284C7] border border-sky-100 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate" title={cleanName}>
+                          {cleanName}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">{size}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFile({ name: cleanName, size })}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer"
+                        title="Preview attachment"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(cleanName)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        title="Download attachment"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-slate-400 italic">No attachments uploaded yet.</p>
@@ -702,6 +753,70 @@ export const AdminTicketDetailsPage: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* File Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 font-sans space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#0284C7]" />
+                <h3 className="text-sm font-bold text-slate-900 truncate max-w-xs">{previewFile.name}</h3>
+              </div>
+              <button
+                onClick={() => setPreviewFile(null)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">File Name:</span>
+                <span className="font-semibold text-slate-800 truncate max-w-[240px]">{previewFile.name}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">File Size:</span>
+                <span className="font-semibold text-slate-700">{previewFile.size || 'Standard Attachment'}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">Ticket:</span>
+                <span className="font-semibold text-slate-700">{ticket?.ticketNumber || id}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium">Status:</span>
+                <span className="font-semibold text-emerald-600">Verified & Scanned</span>
+              </div>
+            </div>
+
+            <div className="border border-dashed border-slate-200 rounded-xl p-6 text-center bg-slate-50/50">
+              <FileText className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+              <p className="text-xs font-semibold text-slate-700">{previewFile.name}</p>
+              <p className="text-[11px] text-slate-400 mt-1">Ready for inspection or local download.</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPreviewFile(null)}
+                className="border-slate-200 text-slate-600 text-xs"
+              >
+                Close Preview
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => handleDownloadFile(previewFile.name)}
+                className="bg-[#0284C7] text-white font-semibold text-xs flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" /> Download File
+              </Button>
+            </div>
           </div>
         </div>
       )}

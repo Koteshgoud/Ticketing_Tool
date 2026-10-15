@@ -96,9 +96,17 @@ export function savePlatformUser(user: AppUser): void {
 export function getCurrentSessionUser(): AppUser | null {
   if (typeof window === 'undefined') return null;
   try {
+    const isRemembered = localStorage.getItem('platform_remember_device') === 'true';
+    const isSessionActive = sessionStorage.getItem('platform_session_active') === 'true';
+
+    // If browser was completely closed and user didn't choose "Remember this device", session has expired
+    if (!isRemembered && !isSessionActive) {
+      return null;
+    }
+
     const raw = localStorage.getItem(STORAGE_KEY_SESSION);
     if (raw) {
-      const parsed = JSON.parse(raw)
+      const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && parsed.email && parsed.role) {
         if (DUMMY_EMAILS.includes(parsed.email.toLowerCase()) || DUMMY_IDS.includes(parsed.id)) {
           localStorage.removeItem(STORAGE_KEY_SESSION);
@@ -113,9 +121,15 @@ export function getCurrentSessionUser(): AppUser | null {
   }
 }
 
-export function setSessionUser(user: AppUser | null): void {
+export function setSessionUser(user: AppUser | null, rememberDevice: boolean = false): void {
   if (user) {
     localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(user));
+    sessionStorage.setItem('platform_session_active', 'true');
+    if (rememberDevice) {
+      localStorage.setItem('platform_remember_device', 'true');
+    } else {
+      localStorage.removeItem('platform_remember_device');
+    }
     localStorage.removeItem('platform_explicitly_logged_out');
     // Clear stale cached admin profile so this user's name and role appear correctly
     localStorage.removeItem('admin_profile_data');
@@ -127,6 +141,8 @@ export function setSessionUser(user: AppUser | null): void {
     }
   } else {
     localStorage.removeItem(STORAGE_KEY_SESSION);
+    sessionStorage.removeItem('platform_session_active');
+    localStorage.removeItem('platform_remember_device');
     localStorage.removeItem('itsm_teamlead_auth');
     localStorage.removeItem('auth_token');
     localStorage.removeItem('admin_profile_data');
@@ -135,7 +151,7 @@ export function setSessionUser(user: AppUser | null): void {
   }
 }
 
-export async function loginUser(email: string, password?: string): Promise<{ success: boolean; user?: AppUser; error?: string }> {
+export async function loginUser(email: string, password?: string, rememberDevice: boolean = false): Promise<{ success: boolean; user?: AppUser; error?: string }> {
   const cleanEmail = email.trim().toLowerCase();
 
   // 1. Direct query to Supabase users table
@@ -177,7 +193,7 @@ export async function loginUser(email: string, password?: string): Promise<{ suc
         role: cleanRole,
         status: dbUser.status || 'Active',
       };
-      setSessionUser(appUser);
+      setSessionUser(appUser, rememberDevice);
       return { success: true, user: appUser };
     }
   } catch (e) {
@@ -207,7 +223,7 @@ export async function loginUser(email: string, password?: string): Promise<{ suc
     return { success: false, error: 'Incorrect password. Please verify your credentials.' };
   }
 
-  setSessionUser(matched);
+  setSessionUser(matched, rememberDevice);
   return { success: true, user: matched };
 }
 
