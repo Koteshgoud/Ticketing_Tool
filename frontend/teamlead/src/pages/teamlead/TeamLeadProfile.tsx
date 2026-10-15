@@ -21,6 +21,18 @@ export const TeamLeadProfile: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  React.useEffect(() => {
+    setFormData({
+      name: user.name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      department: user.department || '',
+      team: user.team || '',
+      location: user.location || '',
+    });
+    setPreviewAvatar(user.avatar || '');
+  }, [user]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);

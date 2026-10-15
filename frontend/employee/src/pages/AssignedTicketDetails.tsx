@@ -11,7 +11,11 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Eye,
+  Download,
+  Trash2,
+  X
 } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import type { EmployeeTicket, TicketStatus } from '../types';
@@ -42,6 +46,7 @@ export const AssignedTicketDetails: React.FC = () => {
   const [modalAttachedFiles, setModalAttachedFiles] = useState<AttachedFile[]>([]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ name: string; size?: string } | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -165,6 +170,31 @@ export const AssignedTicketDetails: React.FC = () => {
       setModalAttachedFiles([]);
       setShowAttachModal(false);
       setToastMessage(`${modalAttachedFiles.length} file(s) attached successfully.`);
+    }
+  };
+
+  const handleDownloadFile = (fileName: string) => {
+    const cleanName = fileName.includes(' (') ? fileName.split(' (')[0] : fileName;
+    const blob = new Blob([
+      `=== Ticketing System Attachment ===\nFile Name: ${cleanName}\nTicket ID: ${ticket?.ticketNumber || id}\nTitle: ${ticket?.title || ''}\nDownloaded on: ${new Date().toLocaleString()}\n`
+    ], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = cleanName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDeleteAttachment = async (fileName: string) => {
+    if (!id) return;
+    if (!window.confirm(`Are you sure you want to remove attachment "${fileName}"?`)) return;
+    const updated = await EmployeeService.deleteAttachment(id, fileName);
+    if (updated) {
+      setTicket({ ...updated });
+      setToastMessage(`Attachment "${fileName}" removed successfully.`);
     }
   };
 
@@ -437,16 +467,55 @@ export const AssignedTicketDetails: React.FC = () => {
           </div>
 
           {ticket.attachments && ticket.attachments.length > 0 ? (
-            <div className="flex flex-wrap gap-3">
-              {ticket.attachments.map((file, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs text-slate-700 font-medium hover:border-[#0284C7] transition-colors"
-                >
-                  <FileText className="w-4 h-4 text-[#0284C7]" />
-                  <span>{file}</span>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {ticket.attachments.map((file, idx) => {
+                const cleanName = file.includes(' (') ? file.split(' (')[0] : file;
+                const size = file.includes('(') ? file.split('(')[1].replace(')', '') : 'Attachment';
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/90 hover:border-[#0284C7] hover:bg-sky-50/20 transition-all shadow-2xs group"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                      <div className="w-8 h-8 rounded-lg bg-sky-50 text-[#0284C7] border border-sky-100 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate" title={cleanName}>
+                          {cleanName}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">{size}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFile({ name: cleanName, size })}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer"
+                        title="Preview attachment"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadFile(cleanName)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        title="Download attachment"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAttachment(cleanName)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Delete extra attachment"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-slate-400 italic">No files attached to this ticket.</p>
@@ -476,10 +545,16 @@ export const AssignedTicketDetails: React.FC = () => {
                   </div>
                   <p className="text-slate-700 leading-relaxed">{item.text}</p>
                   {item.attachment && (
-                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-[11px] font-semibold text-[#0284C7]">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFile(item.attachment!)}
+                      className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-[11px] font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer"
+                      title="Download file"
+                    >
                       <Paperclip className="w-3 h-3" />
-                      {item.attachment}
-                    </div>
+                      <span>{item.attachment}</span>
+                      <Download className="w-3 h-3 ml-1 text-slate-400 hover:text-[#0284C7]" />
+                    </button>
                   )}
                 </div>
               </div>
@@ -729,6 +804,45 @@ export const AssignedTicketDetails: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* File Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#0284C7]" />
+                <h3 className="font-bold text-slate-800 text-sm truncate max-w-xs">{previewFile.name}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewFile(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="py-8 text-center bg-slate-50 rounded-xl my-4 border border-dashed border-slate-200">
+              <FileText className="w-12 h-12 text-[#0284C7] mx-auto mb-2 opacity-80" />
+              <p className="text-xs font-semibold text-slate-700">{previewFile.name}</p>
+              <p className="text-[11px] text-slate-400 mt-1">{previewFile.size || 'Attachment file'}</p>
+              <p className="text-[11px] text-emerald-600 font-medium mt-2">Ready for inspection or local download.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setPreviewFile(null)}>
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleDownloadFile(previewFile.name)}
+                className="bg-[#0284C7] hover:bg-[#0369a1] text-white flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" /> Download File
+              </Button>
+            </div>
           </div>
         </div>
       )}

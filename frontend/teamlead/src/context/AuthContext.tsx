@@ -54,6 +54,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'teamlead',
             department: parsed.department || 'IT Support',
             status: 'Active',
+            location: parsed.location || '',
+            team: parsed.team || '',
+            avatar: parsed.avatar || '',
+            designation: parsed.designation || 'Team Lead',
           };
         }
       }
@@ -247,6 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: cleanEmail,
       phone: userData.phone || '',
       department: userData.department,
+      team: (userData as any).team || '',
       role: userData.role,
       status: userData.status || 'Pending Invitation',
       password: userPassword,
@@ -270,6 +275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           employee_id: cleanId,
           role: 'Employee',
           department: userData.department || 'IT Support',
+          team: (userData as any).team || '',
           invite_token: inviteToken,
           signup_url: signupUrl,
           password: userPassword
@@ -284,6 +290,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: cleanId,
       name: userData.name.trim(),
       email: cleanEmail,
+      team: (userData as any).team || '',
       avatar: '',
     };
 
@@ -299,6 +306,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (data.department) dbUpdates.department = data.department;
     if (data.role) dbUpdates.role = data.role;
     if (data.status) dbUpdates.status = data.status;
+    if (data.team !== undefined) dbUpdates.team = data.team;
+    if (data.location !== undefined) dbUpdates.location = data.location;
+    if (data.avatar !== undefined) dbUpdates.avatar = data.avatar;
 
     const { error } = await supabase.from('users').update(dbUpdates).eq('id', id);
     if (error) {
@@ -328,6 +338,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteUser = (id: string) => {
+    const target = users.find((u) => u.id === id);
+    if (target?.email) {
+      supabase.from('users').delete().eq('email', target.email.toLowerCase()).then(() => {});
+    }
     supabase.from('users').delete().eq('id', id).then(() => {});
     setUsers((prev) => prev.filter((u) => u.id !== id));
   };

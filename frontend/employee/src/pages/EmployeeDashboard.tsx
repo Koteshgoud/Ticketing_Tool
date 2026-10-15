@@ -19,15 +19,15 @@ import type { EmployeeTicket } from '../types';
 
 export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [recentTickets, setRecentTickets] = useState<EmployeeTicket[]>([]);
-  const [stats, setStats] = useState({
-    myTicketsCount: 0,
-    assignedTicketsCount: 0,
-    open: 0,
-    inProgress: 0,
-    pending: 0,
-    resolved: 0,
+  const [allTickets, setAllTickets] = useState<EmployeeTicket[]>(() => {
+    const my = EmployeeService.getEmployeeTickets();
+    const asg = EmployeeService.getAssignedTickets();
+    const map = new Map<string, EmployeeTicket>();
+    [...my, ...asg].forEach(t => map.set(t.id, t));
+    return Array.from(map.values());
   });
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [stats, setStats] = useState(() => EmployeeService.getSummaryStats());
 
   useEffect(() => {
     loadDashboardData();
@@ -35,11 +35,22 @@ export const EmployeeDashboard: React.FC = () => {
 
   const loadDashboardData = async () => {
     await EmployeeService.fetchTickets();
-    const employeeTickets = EmployeeService.getEmployeeTickets();
+    const myTickets = EmployeeService.getEmployeeTickets();
+    const assignedTickets = EmployeeService.getAssignedTickets();
+    const combinedMap = new Map<string, EmployeeTicket>();
+    [...myTickets, ...assignedTickets].forEach(t => combinedMap.set(t.id, t));
+    const combined = Array.from(combinedMap.values());
+    setAllTickets(combined);
     const summary = EmployeeService.getSummaryStats();
-    setRecentTickets(employeeTickets.slice(0, 5));
     setStats(summary);
   };
+
+  const filteredTickets = React.useMemo(() => {
+    if (!activeFilter) return allTickets.slice(0, 10);
+    return allTickets.filter(
+      (t) => (t.status || '').trim().toLowerCase() === activeFilter.trim().toLowerCase()
+    );
+  }, [allTickets, activeFilter]);
 
   const recentColumns: Column<EmployeeTicket>[] = [
     {
@@ -175,7 +186,14 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
 
         {/* Open */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'Open' ? null : 'Open')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between cursor-pointer transition-all hover:shadow-xs ${
+            activeFilter === 'Open'
+              ? 'border-blue-500 ring-2 ring-blue-500/30 bg-blue-50/20'
+              : 'border-slate-200 hover:border-blue-400'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <span className="text-xs font-semibold text-slate-600">Open</span>
             <div className="p-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
@@ -184,12 +202,21 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-blue-700 leading-none">{stats.open}</div>
-            <p className="text-[11px] text-slate-500 mt-1">Awaiting pickup</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {activeFilter === 'Open' ? 'Active filter (click to reset)' : 'Awaiting pickup'}
+            </p>
           </div>
         </div>
 
         {/* In Progress */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'In Progress' ? null : 'In Progress')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between cursor-pointer transition-all hover:shadow-xs ${
+            activeFilter === 'In Progress'
+              ? 'border-[#0284C7] ring-2 ring-[#0284C7]/30 bg-sky-50/20'
+              : 'border-slate-200 hover:border-[#0284C7]'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <span className="text-xs font-semibold text-slate-600">In Progress</span>
             <div className="p-1 bg-sky-50 text-[#0284C7] rounded border border-sky-200">
@@ -198,12 +225,21 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-[#0284C7] leading-none">{stats.inProgress}</div>
-            <p className="text-[11px] text-slate-500 mt-1">Currently working</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {activeFilter === 'In Progress' ? 'Active filter (click to reset)' : 'Currently working'}
+            </p>
           </div>
         </div>
 
         {/* Pending */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'Pending' ? null : 'Pending')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between cursor-pointer transition-all hover:shadow-xs ${
+            activeFilter === 'Pending'
+              ? 'border-amber-500 ring-2 ring-amber-500/30 bg-amber-50/20'
+              : 'border-slate-200 hover:border-amber-400'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <span className="text-xs font-semibold text-slate-600">Pending</span>
             <div className="p-1 bg-amber-50 text-amber-600 rounded border border-amber-200">
@@ -212,12 +248,21 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-amber-600 leading-none">{stats.pending}</div>
-            <p className="text-[11px] text-slate-500 mt-1">Awaiting response</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {activeFilter === 'Pending' ? 'Active filter (click to reset)' : 'Awaiting response'}
+            </p>
           </div>
         </div>
 
         {/* Resolved */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => setActiveFilter(activeFilter === 'Resolved' ? null : 'Resolved')}
+          className={`bg-white border rounded-xl p-3.5 shadow-2xs flex flex-col justify-between cursor-pointer transition-all hover:shadow-xs ${
+            activeFilter === 'Resolved'
+              ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-50/20'
+              : 'border-slate-200 hover:border-emerald-400'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <span className="text-xs font-semibold text-slate-600">Resolved</span>
             <div className="p-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-200">
@@ -226,28 +271,43 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-emerald-600 leading-none">{stats.resolved}</div>
-            <p className="text-[11px] text-slate-500 mt-1">Completed tickets</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {activeFilter === 'Resolved' ? 'Active filter (click to reset)' : 'Completed tickets'}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Recent Tickets Table Section */}
+      {/* Tickets Table Section */}
       <Card
         headerClassName="px-5 py-3.5 bg-slate-50/50 border-b border-slate-200"
         bodyClassName="p-0"
         title={
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-[#0284C7]" />
-            <span className="text-base font-semibold text-slate-900">Recent Tickets</span>
-            <Badge variant="neutral" className="text-[11px] py-0.5 px-2">
-              {recentTickets.length} recent
-            </Badge>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[#0284C7]" />
+              <span className="text-base font-semibold text-slate-900">
+                {activeFilter ? `${activeFilter} Tickets` : 'Recent Tickets'}
+              </span>
+              <Badge variant="neutral" className="text-[11px] py-0.5 px-2">
+                {filteredTickets.length} {activeFilter ? 'filtered' : 'recent'}
+              </Badge>
+            </div>
+            {activeFilter && (
+              <button
+                type="button"
+                onClick={() => setActiveFilter(null)}
+                className="text-xs font-semibold text-[#0284C7] hover:underline cursor-pointer bg-transparent border-0"
+              >
+                Show All Tickets
+              </button>
+            )}
           </div>
         }
       >
         <Table
           columns={recentColumns}
-          data={recentTickets}
+          data={filteredTickets}
           keyExtractor={(row) => row.id}
           compact
         />

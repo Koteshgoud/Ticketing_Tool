@@ -88,7 +88,11 @@ export const CreateTicket: React.FC = () => {
       dept === 'Other' ? (customDepartment.trim() || 'Other') : dept
     );
 
-    const attachmentStrings = attachedFiles.map((f) => `${f.name} (${f.size})`);
+    // Deduplicate attachments to prevent duplicate uploads
+    const uniqueAttached = attachedFiles.filter((file, index, self) =>
+      index === self.findIndex((f) => f.name.toLowerCase() === file.name.toLowerCase())
+    );
+    const attachmentStrings = uniqueAttached.map((f) => `${f.name} (${f.size})`);
 
     try {
       const newTicket = EmployeeService.createTicket({
@@ -374,21 +378,7 @@ export const CreateTicket: React.FC = () => {
             )}
           </div>
 
-          {/* Unified Team Lead & Employee Tagging Component */}
-          <TeamLeadEmployeeSelector
-            role="employee"
-            selectedDepartments={activeDepartments}
-            selectedTeamLeadIds={selectedTeamLeadIds}
-            onSelectedTeamLeadsChange={(ids, objs) => {
-              setSelectedTeamLeadIds(ids);
-              setSelectedTeamLeadObjs(objs);
-            }}
-            selectedEmployeeIds={selectedEmployeeIds}
-            onSelectedEmployeesChange={(ids, objs) => {
-              setSelectedEmployeeIds(ids);
-              setSelectedEmployeeObjs(objs);
-            }}
-          />
+
 
           {/* Category Row */}
           <div>

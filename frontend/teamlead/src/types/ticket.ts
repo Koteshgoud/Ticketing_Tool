@@ -56,4 +56,6 @@ export interface Ticket {
   teamLeadIds?: string[];
   taggedEmployees?: { id: string; name: string; employeeId: string; role: string; email: string }[];
   employeeIds?: string[];
+  title?: string;
+  isEscalated?: boolean;
 }

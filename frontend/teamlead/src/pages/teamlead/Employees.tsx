@@ -250,7 +250,27 @@ export const Employees: React.FC = () => {
                           <span>View</span>
                         </button>
 
-                        {/* Secondary Actions 3-Dot Dropdown */}
+                        {/* Edit Action */}
+                        <button
+                          onClick={() => setEditingUser(u)}
+                          className="px-2 py-1 text-xs font-semibold text-slate-600 hover:text-sky-700 hover:bg-slate-100 rounded transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                          title="Edit Employee"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+
+                        {/* Direct Delete Account Action */}
+                        <button
+                          onClick={() => setDeletingUser(u)}
+                          className="px-2 py-1 text-xs font-semibold text-rose-600 bg-rose-50/50 hover:bg-rose-100 hover:text-rose-700 border border-rose-200 rounded transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                          title="Delete Employee Account"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Delete</span>
+                        </button>
+
+                        {/* Secondary Status Toggle 3-Dot Dropdown */}
                         <div className="relative">
                           <button
                             onClick={() => setMenuUserId(menuUserId === u.id ? null : u.id)}

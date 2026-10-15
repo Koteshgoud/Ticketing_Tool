@@ -11,7 +11,8 @@ import { Table, type Column } from '../components/ui/Table';
 
 export const AssignedTickets: React.FC = () => {
   const navigate = useNavigate();
-  const [tickets, setTickets] = useState<EmployeeTicket[]>([]);
+  const [tickets, setTickets] = useState<EmployeeTicket[]>(() => EmployeeService.getAssignedTickets());
+  const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
@@ -19,6 +20,7 @@ export const AssignedTickets: React.FC = () => {
     await EmployeeService.fetchTickets();
     const list = EmployeeService.getAssignedTickets();
     setTickets(list);
+    setIsLoading(false);
   };
 
   useEffect(() => {

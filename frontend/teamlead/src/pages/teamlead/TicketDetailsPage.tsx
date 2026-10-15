@@ -22,7 +22,10 @@ import {
   FileText,
   Upload,
   RefreshCw,
-  ChevronDown
+  ChevronDown,
+  Download,
+  Eye,
+  X
 } from 'lucide-react';
 
 export const TicketDetailsPage: React.FC = () => {
@@ -49,6 +52,7 @@ export const TicketDetailsPage: React.FC = () => {
   const [newComment, setNewComment] = useState('');
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ name: string; size?: string } | null>(null);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -119,6 +123,22 @@ export const TicketDetailsPage: React.FC = () => {
     setIsResolveModalOpen(false);
     setResolutionSummaryInput('');
     showToast(`Ticket ${ticket.id} marked as Resolved.`);
+  };
+
+  const handleDownloadFile = (fileName: string) => {
+    const cleanName = fileName.includes(' (') ? fileName.split(' (')[0] : fileName;
+    const blob = new Blob([
+      `=== Ticketing System Attachment ===\nFile Name: ${cleanName}\nTicket ID: ${ticket.id}\nTitle: ${ticket.subject || ticket.title || ''}\nDownloaded on: ${new Date().toLocaleString()}\n`
+    ], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = cleanName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`Downloaded ${cleanName}`);
   };
 
   const handlePostComment = (e: React.FormEvent) => {
@@ -199,14 +219,24 @@ export const TicketDetailsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Escalate Button */}
-          <button
-            onClick={() => setIsEscalateModalOpen(true)}
-            className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-            <span>Escalate</span>
-          </button>
+          {/* Escalate Button - only visible if not already escalated or resolved */}
+          {ticket.status !== 'Escalated' && !ticket.isEscalated && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
+            <button
+              onClick={() => setIsEscalateModalOpen(true)}
+              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+              <span>Escalate</span>
+            </button>
+          )}
+
+          {/* If already escalated, show persistent Escalated Indicator instead of repeating Escalate button */}
+          {(ticket.status === 'Escalated' || ticket.isEscalated) && (
+            <span className="px-3 py-1.5 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl border border-rose-300 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+              Escalated to Tier 3 / Admin
+            </span>
+          )}
 
           {/* Add Attachment Button */}
           <button
@@ -217,14 +247,16 @@ export const TicketDetailsPage: React.FC = () => {
             <span>Add Attachment</span>
           </button>
 
-          {/* Mark as Resolved Button */}
-          <button
-            onClick={() => setIsResolveModalOpen(true)}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Mark as Resolved</span>
-          </button>
+          {/* Mark as Resolved Button - only visible if not already resolved and not in escalated pending state */}
+          {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && ticket.status !== 'Escalated' && !ticket.isEscalated && (
+            <button
+              onClick={() => setIsResolveModalOpen(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Mark as Resolved</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -528,9 +560,25 @@ export const TicketDetailsPage: React.FC = () => {
                       <p className="text-[10px] text-slate-400">{att.size}</p>
                     </div>
                   </div>
-                  <button className="px-3 py-1 text-[11px] font-semibold text-sky-600 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer">
-                    Download
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFile({ name: att.name, size: att.size })}
+                      className="p-1.5 text-slate-500 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
+                      title="Preview attachment"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFile(att.name)}
+                      className="px-3 py-1 text-[11px] font-semibold text-sky-600 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                      title="Download attachment"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -694,6 +742,48 @@ export const TicketDetailsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL 4: Preview File Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-sky-600" />
+                <h3 className="font-bold text-slate-800 text-sm truncate max-w-xs">{previewFile.name}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewFile(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="py-8 text-center bg-slate-50 rounded-xl my-4 border border-dashed border-slate-200">
+              <FileText className="w-12 h-12 text-sky-600 mx-auto mb-2 opacity-80" />
+              <p className="text-xs font-semibold text-slate-700">{previewFile.name}</p>
+              <p className="text-[11px] text-slate-400 mt-1">{previewFile.size || 'Attachment file'}</p>
+              <p className="text-[11px] text-emerald-600 font-medium mt-2">Ready for inspection or local download.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPreviewFile(null)}
+                className="px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl text-xs"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadFile(previewFile.name)}
+                className="px-4 py-2 font-bold bg-sky-600 hover:bg-sky-700 text-white rounded-xl transition-colors shadow-xs text-xs flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" /> Download File
+              </button>
+            </div>
           </div>
         </div>
       )}

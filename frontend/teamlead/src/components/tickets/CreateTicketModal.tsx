@@ -87,6 +87,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   );
 
   const [fileAttachments, setFileAttachments] = useState<FileAttachmentItem[]>([]);
+  const [routeToAdmin, setRouteToAdmin] = useState(false);
+  const [adminNote, setAdminNote] = useState('');
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
@@ -129,15 +131,24 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
       const finalDepartments = selectedDepartments.map((dept) =>
         dept === 'Other' ? (customDepartment.trim() || 'Other') : dept
       );
+      if (routeToAdmin && !finalDepartments.includes('General Administration')) {
+        finalDepartments.push('General Administration');
+      }
       const mainDepartmentStr = finalDepartments.join(' & ');
+      const finalDesc = routeToAdmin
+        ? `${description.trim()}\n\n[ADMIN ATTENTION REQUESTED by Team Lead ${user?.name || 'TL'}]: ${adminNote.trim() || 'Please review and assist.'}`
+        : description.trim();
 
       const newTicket = createTicket({
-        subject: subject.trim(),
-        description: description.trim(),
+        subject: routeToAdmin ? `[Admin Escalation] ${subject.trim()}` : subject.trim(),
+        description: finalDesc,
         category: finalCategory as TicketCategory,
-        priority,
+        priority: routeToAdmin && priority === 'Low' ? 'High' : priority,
         department: mainDepartmentStr,
         departments: finalDepartments,
+        routedToAdmin: routeToAdmin,
+        approachedAdmin: routeToAdmin,
+        adminNote: adminNote.trim(),
         teamLeads: selectedTeamLeadObjs.map((tl) => ({
           id: tl.id,
           employeeId: tl.employeeId,
@@ -165,7 +176,9 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
       });
 
       // 18. NOTIFICATION
-      const successMsg = `Ticket created successfully. Email sent successfully.`;
+      const successMsg = routeToAdmin
+        ? `Ticket created & routed directly to Administrator.`
+        : `Ticket created successfully. Email sent successfully.`;
       setSuccessToast(successMsg);
 
       if (onSuccess) {
@@ -182,6 +195,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         setSelectedEmployeeIds([]);
         setSelectedEmployeeObjs([]);
         setFileAttachments([]);
+        setRouteToAdmin(false);
+        setAdminNote('');
         setError('');
         setSuccessToast(null);
         onClose();
@@ -375,6 +390,42 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
               setSelectedEmployeeObjs(objs);
             }}
           />
+
+          {/* Mention / Approach Admin Option */}
+          <div className="p-3.5 bg-indigo-50/60 border border-indigo-200/80 rounded-xl space-y-2.5">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={routeToAdmin}
+                onChange={(e) => setRouteToAdmin(e.target.checked)}
+                className="mt-0.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+              />
+              <div>
+                <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  Route / Approach Platform Administrator Directly
+                </span>
+                <p className="text-[11px] text-indigo-800/80 mt-0.5">
+                  Enable this if this ticket requires approval, intervention, policy exception, or escalation from System Admin.
+                </p>
+              </div>
+            </label>
+
+            {routeToAdmin && (
+              <div className="pt-2 border-t border-indigo-100 animate-in fade-in duration-150">
+                <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                  Note / Instruction for Administrator
+                </label>
+                <input
+                  type="text"
+                  value={adminNote}
+                  onChange={(e) => setAdminNote(e.target.value)}
+                  placeholder="e.g. Requesting higher quota approval / critical system configuration changes..."
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-indigo-200 rounded-lg focus:outline-none focus:border-indigo-500 text-slate-800 placeholder-indigo-300"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Description */}
           <div>

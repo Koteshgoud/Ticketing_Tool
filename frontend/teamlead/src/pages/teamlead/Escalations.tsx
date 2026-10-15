@@ -6,12 +6,37 @@ import { SearchBar } from '../../components/common/SearchBar';
 import { getSLABadgeStyle } from '../../utils/helpers';
 import { AlertTriangle, ShieldAlert, Eye, UserPlus, CheckCircle2 } from 'lucide-react';
 import { Ticket } from '../../types/ticket';
+import { Escalation } from '../../types/escalation';
 
 export const Escalations: React.FC = () => {
   const { escalations, tickets, setSelectedTicket, selectedTicket, resolveTicket, assignAgent } = useTickets();
   const [search, setSearch] = useState('');
 
-  const filteredEscalations = escalations.filter(
+  const allEscalations = React.useMemo(() => {
+    const escMap = new Map<string, Escalation>();
+    (escalations || []).forEach((e) => escMap.set(e.ticketId || e.id, e));
+    (tickets || []).forEach((t) => {
+      if ((t.status || '').toLowerCase() === 'escalated' || t.isEscalated) {
+        if (!escMap.has(t.id)) {
+          escMap.set(t.id, {
+            id: `esc-${t.id}`,
+            ticketId: t.id,
+            subject: t.subject || (t as any).title || 'Escalated Ticket',
+            priority: t.priority || 'High',
+            escalatedBy: t.employee || 'Employee',
+            escalatedTo: 'Tier 3 Operations / Admin',
+            escalationReason: t.description ? t.description.slice(0, 120) : 'Escalated for senior review',
+            slaStatus: 'At Risk',
+            escalatedDate: t.createdAt ? t.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            status: 'Pending Review',
+          });
+        }
+      }
+    });
+    return Array.from(escMap.values());
+  }, [escalations, tickets]);
+
+  const filteredEscalations = allEscalations.filter(
     (esc) =>
       esc.ticketId.toLowerCase().includes(search.toLowerCase()) ||
       esc.subject.toLowerCase().includes(search.toLowerCase()) ||

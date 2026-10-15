@@ -14,7 +14,15 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
   if (!isOpen) return null;
 
   const navigate = useNavigate();
-  const { addUser } = useAuth();
+  const { addUser, user, users } = useAuth();
+
+  const teamLeadsList = React.useMemo(() => {
+    const list = (users || []).filter((u) => u.role === 'teamlead' || u.role === 'admin');
+    if (list.length === 0 && user) {
+      return [user];
+    }
+    return list;
+  }, [users, user]);
 
   const [step, setStep] = useState<'form' | 'success'>('form');
 
@@ -24,6 +32,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [department, setDepartment] = useState('');
+  const [assignedTeamLead, setAssignedTeamLead] = useState(() => user?.name || '');
   const [role] = useState<UserRole>('employee');
   const [status, setStatus] = useState<UserStatus>('Active');
 
@@ -40,6 +49,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
     name: string;
     email: string;
     department: string;
+    assignedTeamLead: string;
     role: string;
     invitationLink: string;
   } | null>(null);
@@ -73,6 +83,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
       newErrors.email = 'Please enter a valid email address (e.g. user@company.com).';
     }
     if (!department.trim()) newErrors.department = 'Department is required.';
+    if (!assignedTeamLead.trim()) newErrors.assignedTeamLead = 'Please assign a Team Lead / Reporting Manager.';
 
     if (phone && phone.trim().length > 0 && phone.trim().length !== 10) {
       newErrors.phone = 'Phone number must be exactly 10 digits.';
@@ -105,6 +116,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
       email: email.trim(),
       phone: phone.trim() || undefined,
       department: department.trim(),
+      team: assignedTeamLead.trim(),
       role: 'employee',
       status: 'Pending Invitation',
       invite_token: inviteToken,
@@ -127,6 +139,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
       name: name.trim(),
       email: email.trim(),
       department: department.trim(),
+      assignedTeamLead: assignedTeamLead.trim(),
       role: 'Employee',
       invitationLink: realInviteLink,
     });
@@ -148,6 +161,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
     setEmail('');
     setPhone('');
     setDepartment('');
+    setAssignedTeamLead(user?.name || '');
     setPassword('');
     setConfirmPassword('');
     setStatus('Active');
@@ -282,6 +296,30 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
                   {errors.department && <p className="text-[10px] text-rose-500 mt-1">{errors.department}</p>}
                 </div>
 
+                {/* Assigned Team Lead / Reporting Manager */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Assigned Team Lead <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={assignedTeamLead}
+                    onChange={(e) => setAssignedTeamLead(e.target.value)}
+                    className={`w-full px-3 py-2 text-xs bg-slate-50 border rounded-xl focus:outline-none focus:bg-white text-slate-800 ${
+                      errors.assignedTeamLead ? 'border-rose-400 focus:border-rose-500' : 'border-slate-200 focus:border-sky-500'
+                    }`}
+                  >
+                    <option value="">Select Team Lead...</option>
+                    {teamLeadsList.map((tl) => (
+                      <option key={tl.id} value={tl.name}>
+                        {tl.name} ({tl.department || 'Operations'})
+                      </option>
+                    ))}
+                  </select>
+                  {errors.assignedTeamLead && (
+                    <p className="text-[10px] text-rose-500 mt-1">{errors.assignedTeamLead}</p>
+                  )}
+                </div>
+
                 {/* System Role (Fixed to Employee) */}
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -393,7 +431,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onS
               ✓ Employee Successfully Created!
             </h2>
             <p className="text-xs text-slate-600 mb-6">
-              Account created for <span className="font-bold text-slate-900">{createdEmployee?.name}</span> ({createdEmployee?.role}) in <span className="font-semibold text-slate-800">{createdEmployee?.department}</span>.
+              Account created for <span className="font-bold text-slate-900">{createdEmployee?.name}</span> ({createdEmployee?.role}) assigned to Team Lead <span className="font-semibold text-sky-700">{createdEmployee?.assignedTeamLead}</span> in <span className="font-semibold text-slate-800">{createdEmployee?.department}</span>.
             </p>
 
             {/* Invitation Link Box */}

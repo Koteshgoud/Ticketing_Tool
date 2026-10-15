@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Mail, Shield, Building, Phone, BadgeCheck, Camera, Upload, Edit3, Save, X } from 'lucide-react';
+import { User, Mail, Shield, Building, Phone, BadgeCheck, Camera, Upload, Edit3, Save, X, Trash2 } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import type { EmployeeProfile } from '../types';
 import { Button } from '../components/ui/Button';
@@ -82,6 +82,14 @@ export const Profile: React.FC = () => {
     }
   };
 
+  const handleRemovePhoto = () => {
+    setEditAvatarUrl('');
+    const updated = EmployeeService.updateProfile({ avatarUrl: '' });
+    setProfile(updated);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    window.dispatchEvent(new Event('storage'));
+  };
+
   const displayAvatar = isEditing ? editAvatarUrl : profile.avatarUrl;
 
   return (
@@ -115,14 +123,26 @@ export const Profile: React.FC = () => {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute -bottom-1.5 -right-1.5 p-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:text-[#0284C7] hover:border-[#0284C7] shadow-xs cursor-pointer transition-all"
-              title="Upload profile photo from computer"
-            >
-              <Camera className="w-4 h-4 text-[#0284C7]" />
-            </button>
+            <div className="absolute -bottom-1.5 -right-1.5 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:text-[#0284C7] hover:border-[#0284C7] shadow-xs cursor-pointer transition-all"
+                title="Upload profile photo from computer"
+              >
+                <Camera className="w-4 h-4 text-[#0284C7]" />
+              </button>
+              {displayAvatar && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  className="p-1.5 rounded-full bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 shadow-xs cursor-pointer transition-all"
+                  title="Remove profile photo"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -146,6 +166,15 @@ export const Profile: React.FC = () => {
               >
                 <Upload className="w-3.5 h-3.5" /> Upload Photo from Computer
               </button>
+              {displayAvatar && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  className="text-xs font-bold text-rose-600 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Remove Photo
+                </button>
+              )}
             </div>
           </div>
         </div>

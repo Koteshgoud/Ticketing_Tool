@@ -113,8 +113,7 @@ export const TeamLeadDashboard: React.FC = () => {
       if (dashboardFilter === 'Escalated') return t.status === 'Escalated';
       return true;
     })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // Priority Badge Renderer
   const renderPriorityBadge = (priority: TicketPriority) => {

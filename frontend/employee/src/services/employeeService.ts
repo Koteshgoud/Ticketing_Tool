@@ -92,27 +92,28 @@ function mapDbTicket(row: any): EmployeeTicket {
 export const EmployeeService = {
   async fetchTickets(): Promise<EmployeeTicket[]> {
     try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [ticketsRes, attsRes] = await Promise.all([
+        supabase.from('tickets').select('*').order('created_at', { ascending: false }),
+        supabase.from('ticket_attachments').select('ticket_id, name, size')
+      ]);
 
-      if (!error && data) {
-        const { data: allAttachments } = await supabase
-          .from('ticket_attachments')
-          .select('*');
-
+      if (!ticketsRes.error && ticketsRes.data) {
         const attMap: Record<string, string[]> = {};
-        if (allAttachments) {
-          allAttachments.forEach((att: any) => {
+        if (attsRes.data) {
+          attsRes.data.forEach((att: any) => {
             if (!attMap[att.ticket_id]) attMap[att.ticket_id] = [];
-            attMap[att.ticket_id].push(att.size && att.size !== 'N/A' ? `${att.name} (${att.size})` : att.name);
+            const str = att.size && att.size !== 'N/A' ? `${att.name} (${att.size})` : att.name;
+            if (!attMap[att.ticket_id].includes(str)) {
+              attMap[att.ticket_id].push(str);
+            }
           });
         }
 
-        ticketsCache = data.map((d: any) => {
+        ticketsCache = ticketsRes.data.map((d: any) => {
           const t = mapDbTicket(d);
-          if (attMap[t.id] && attMap[t.id].length > 0) t.attachments = attMap[t.id];
+          if (attMap[t.id] && attMap[t.id].length > 0) {
+            t.attachments = Array.from(new Set(attMap[t.id]));
+          }
           return t;
         });
         return ticketsCache;
@@ -354,7 +355,8 @@ export const EmployeeService = {
         // Insert attachments into ticket_attachments table if provided
         if (data.attachments && data.attachments.length > 0) {
           try {
-            const attRows = data.attachments.map((attStr, idx) => ({
+            const uniqueAtts = Array.from(new Set(data.attachments));
+            const attRows = uniqueAtts.map((attStr, idx) => ({
               id: `att-${Date.now()}-${idx}`,
               ticket_id: ticketId,
               name: attStr.split(' (')[0] || attStr,
@@ -558,6 +560,43 @@ export const EmployeeService = {
     }
   },
 
+  async deleteAttachment(ticketId: string, fileName: string): Promise<EmployeeTicket | null> {
+    const user = getEmployeeSessionUser();
+    const actorName = user?.name || 'Employee';
+    const cleanName = fileName.includes(' (') ? fileName.split(' (')[0] : fileName;
+
+    try {
+      await supabase
+        .from('ticket_attachments')
+        .delete()
+        .eq('ticket_id', ticketId)
+        .eq('name', cleanName);
+
+      const now = new Date().toISOString();
+      await supabase.from('ticket_activities').insert([{
+        id: `act-${Date.now()}`,
+        ticket_id: ticketId,
+        user: actorName,
+        action: `Removed attachment: ${cleanName}`,
+        timestamp: now,
+      }]);
+
+      await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
+
+      // Update in local cache
+      const t = ticketsCache.find((x) => x.id === ticketId);
+      if (t && t.attachments) {
+        t.attachments = t.attachments.filter((att) => !att.startsWith(cleanName));
+      }
+
+      const updated = await this.getTicketByIdAsync(ticketId);
+      return updated || null;
+    } catch (e) {
+      console.error('Supabase deleteAttachment error:', e);
+      return null;
+    }
+  },
+
   async fetchNotifications(): Promise<EmployeeNotificationItem[]> {
     try {
       const user = getEmployeeSessionUser();
@@ -670,10 +709,11 @@ export const EmployeeService = {
     const employeeTickets = this.getEmployeeTickets();
     const myTicketsCount = this.getMyTickets().length;
     const assignedTicketsCount = this.getAssignedTickets().length;
-    const open = employeeTickets.filter((t) => t.status === 'Open').length;
-    const inProgress = employeeTickets.filter((t) => t.status === 'In Progress').length;
-    const pending = employeeTickets.filter((t) => t.status === 'Pending' || t.status === 'Escalated').length;
-    const resolved = employeeTickets.filter((t) => t.status === 'Resolved' || t.status === 'Closed').length;
+    const norm = (s?: string) => (s || '').trim().toLowerCase();
+    const open = employeeTickets.filter((t) => norm(t.status) === 'open').length;
+    const inProgress = employeeTickets.filter((t) => norm(t.status) === 'in progress' || norm(t.status) === 'inprogress').length;
+    const pending = employeeTickets.filter((t) => norm(t.status) === 'pending' || norm(t.status) === 'escalated').length;
+    const resolved = employeeTickets.filter((t) => norm(t.status) === 'resolved' || norm(t.status) === 'closed').length;
 
     return { myTicketsCount, assignedTicketsCount, open, inProgress, pending, resolved };
   },
