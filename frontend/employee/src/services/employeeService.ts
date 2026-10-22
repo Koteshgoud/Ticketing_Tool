@@ -144,13 +144,13 @@ export const EmployeeService = {
       if (!assigned || assigned === 'unassigned') return false;
 
       // Match by User ID or Employee ID
-      if (userId && (agentId === userId || assigned === userId)) return true;
-      if (empId && (agentId === empId || assigned === empId)) return true;
+      if (userId && (agentId === userId || assigned === userId || assigned.includes(userId))) return true;
+      if (empId && (agentId === empId || assigned === empId || assigned.includes(empId))) return true;
 
       // Match by Email
       if (userEmail && (assigned === userEmail || assigned.includes(userEmail))) return true;
 
-      // Match by Name
+      // Match by Name (e.g. "Uday" or "Uday (OKL004)")
       if (userName && (assigned === userName || assigned.includes(userName) || userName.includes(assigned))) return true;
 
       return false;
@@ -276,6 +276,13 @@ export const EmployeeService = {
           role: tl.role,
         }));
 
+    const assignedEmployee = (data.employees && data.employees.length > 0) ? data.employees[0] : null;
+    const assignedAgentName = assignedEmployee ? assignedEmployee.name : (teamLeads[0]?.name || 'Unassigned');
+    const assignedAgentId = assignedEmployee ? (assignedEmployee.id || assignedEmployee.employeeId) : null;
+    const assignedByStr = assignedEmployee
+      ? `${teamLeads[0]?.name || creatorName} (Team Lead)`
+      : `${creatorName} (Requester)`;
+
     const newTicket: EmployeeTicket = {
       id: ticketId,
       ticketNumber: ticketId,
@@ -291,6 +298,8 @@ export const EmployeeService = {
       status: 'Open',
       createdAt: formatted,
       updatedAt: formatted,
+      assignedTo: assignedAgentName,
+      assignedBy: assignedByStr,
       attachments: data.attachments || [],
       history: [
         {
@@ -303,6 +312,9 @@ export const EmployeeService = {
     };
     (newTicket as any).employee_email = creatorEmail;
     (newTicket as any).employee = creatorName;
+    (newTicket as any).employee_id = user?.id || null;
+    (newTicket as any).assigned_agent = assignedAgentName;
+    (newTicket as any).assigned_agent_id = assignedAgentId;
 
     // Stored directly in Supabase (background async persist)
     try {
@@ -312,26 +324,27 @@ export const EmployeeService = {
         description: data.description,
         employee: creatorName,
         employee_email: creatorEmail,
+        employee_id: user?.id || null,
         department: mainDepartmentStr,
         departments: selectedDepts,
         category: data.category,
         priority: data.priority,
         status: 'Open',
-        assigned_agent: teamLeads[0]?.name || 'Unassigned',
-        assigned_by: `${creatorName} (Requester)`,
+        assigned_agent: assignedAgentName,
+        assigned_agent_id: assignedAgentId,
+        assigned_by: assignedByStr,
         sla_status: 'Within SLA',
         sla_remaining: '8h 00m remaining',
       }]).then();
 
       (async () => {
         try {
-          // Insert notifications into portal_notifications table
-          await supabase.from('portal_notifications').insert([
+          const notificationsToInsert = [
             {
               id: `notif-${Date.now()}-tl`,
               ticket_id: ticketId,
               title: `New Ticket: ${ticketId}`,
-              message: `${creatorName} assigned ${ticketId} ("${data.title}") to ${teamLeads[0]?.name || 'Team Lead'}.`,
+              message: `${creatorName} created ${ticketId} ("${data.title}") - assigned to ${assignedAgentName}.`,
               type: 'info',
               for_role: 'teamlead',
               read: false,
@@ -341,13 +354,29 @@ export const EmployeeService = {
               id: `notif-${Date.now()}-emp`,
               ticket_id: ticketId,
               title: `Ticket Created: ${ticketId}`,
-              message: `Your ticket ${ticketId} was created and assigned to ${teamLeads[0]?.name || 'Team Lead'}.`,
+              message: `Your ticket ${ticketId} was created successfully.`,
               type: 'success',
               for_role: 'employee',
               read: false,
               timestamp: new Date().toISOString(),
             }
-          ]);
+          ];
+
+          if (assignedEmployee) {
+            notificationsToInsert.push({
+              id: `notif-${Date.now()}-asg`,
+              ticket_id: ticketId,
+              title: `Ticket Assigned: ${ticketId}`,
+              message: `You were assigned ticket ${ticketId} ("${data.title}") by ${assignedByStr}.`,
+              type: 'warning',
+              for_role: 'employee',
+              read: false,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          // Insert notifications into portal_notifications table
+          await supabase.from('portal_notifications').insert(notificationsToInsert);
         } catch (e) {
           console.error('Supabase notifications insert error:', e);
         }
@@ -654,15 +683,69 @@ export const EmployeeService = {
     return {
       name: user?.name || 'Employee',
       email: user?.email || 'employee@company.com',
-      employeeId: user?.id || 'EMP-001',
-      department: user?.department || 'Operations',
-      role: 'Employee',
+      employeeId: user?.id || user?.employeeId || 'OKL004',
+      department: user?.department || 'IT Support',
+      role: user?.role === 'employee' ? 'Employee' : (user?.role || 'Employee'),
       phone: user?.phone || '',
-      avatarUrl: user?.avatar || '',
+      avatarUrl: user?.avatar || user?.avatarUrl || '',
     };
   },
 
-  updateProfile(data: Partial<EmployeeProfile>): EmployeeProfile {
+  async fetchProfile(): Promise<EmployeeProfile> {
+    const sessionUser = getEmployeeSessionUser();
+    const email = sessionUser?.email;
+    const id = sessionUser?.id;
+
+    if (!email && !id) {
+      return this.getProfile();
+    }
+
+    try {
+      let query = supabase.from('users').select('*');
+      if (email) {
+        query = query.eq('email', email.trim().toLowerCase());
+      } else if (id) {
+        query = query.eq('id', id);
+      }
+
+      const { data: dbUser, error } = await query.maybeSingle();
+      if (!error && dbUser) {
+        const synced = {
+          ...(sessionUser || {}),
+          id: dbUser.id,
+          name: dbUser.name || sessionUser?.name || 'Employee',
+          email: dbUser.email,
+          phone: dbUser.phone || '',
+          department: dbUser.department || 'IT Support',
+          team: dbUser.team || '',
+          role: dbUser.role || 'employee',
+          designation: dbUser.designation || '',
+          avatar: dbUser.avatar || '',
+          avatarUrl: dbUser.avatar || '',
+        };
+        try {
+          localStorage.setItem('platform_current_user', JSON.stringify(synced));
+          window.dispatchEvent(new Event('storage'));
+        } catch {}
+
+        return {
+          name: synced.name,
+          email: synced.email,
+          employeeId: synced.id,
+          department: synced.department,
+          role: 'Employee',
+          phone: synced.phone,
+          avatarUrl: synced.avatarUrl,
+        };
+      }
+    } catch (e) {
+      console.warn('Error fetching live profile from Supabase:', e);
+    }
+
+    return this.getProfile();
+  },
+
+  async updateProfile(data: Partial<EmployeeProfile>): Promise<EmployeeProfile> {
     const user = getEmployeeSessionUser();
     if (user?.id || user?.email) {
       const dbUpdates: Record<string, any> = {};
@@ -672,10 +755,14 @@ export const EmployeeService = {
       if (data.avatarUrl !== undefined) dbUpdates.avatar = data.avatarUrl || null;
       dbUpdates.updated_at = new Date().toISOString();
 
-      if (user?.id) {
-        supabase.from('users').update(dbUpdates).eq('id', user.id).then(() => {});
-      } else if (user?.email) {
-        supabase.from('users').update(dbUpdates).eq('email', user.email.toLowerCase()).then(() => {});
+      try {
+        if (user?.id) {
+          await supabase.from('users').update(dbUpdates).eq('id', user.id);
+        } else if (user?.email) {
+          await supabase.from('users').update(dbUpdates).eq('email', user.email.toLowerCase());
+        }
+      } catch (err) {
+        console.warn('Error updating profile in Supabase:', err);
       }
     }
 
@@ -698,8 +785,8 @@ export const EmployeeService = {
       name: updatedUser.name || 'Employee',
       email: updatedUser.email || 'employee@company.com',
       employeeId: updatedUser.id || updatedUser.employeeId || 'OKL004',
-      department: updatedUser.department || 'Operations',
-      role: updatedUser.role || 'Employee',
+      department: updatedUser.department || 'IT Support',
+      role: 'Employee',
       phone: updatedUser.phone || '',
       avatarUrl: updatedUser.avatar || '',
     };

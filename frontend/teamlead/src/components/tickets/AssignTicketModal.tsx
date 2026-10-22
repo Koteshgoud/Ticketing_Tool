@@ -19,11 +19,17 @@ export const AssignTicketModal: React.FC<AssignTicketModalProps> = ({
 }) => {
   if (!isOpen || !ticket) return null;
 
-  const { users } = useAuth();
+  const { currentUser, users } = useAuth();
   const { assignAgent, changePriority } = useTickets();
 
-  // Filter Active Employees
-  const activeEmployees = users.filter((u) => u.status === 'Active');
+  // Filter Active Employees (strictly employees, prioritizing team lead's team)
+  const activeEmployees = users
+    .filter((u) => u.status === 'Active' && u.role === 'employee')
+    .sort((a, b) => {
+      const aTeam = (a.team || '').toLowerCase() === (currentUser?.team || '').toLowerCase() ? 1 : 0;
+      const bTeam = (b.team || '').toLowerCase() === (currentUser?.team || '').toLowerCase() ? 1 : 0;
+      return bTeam - aTeam;
+    });
 
   const [selectedEmployeeName, setSelectedEmployeeName] = useState<string>(
     ticket.assignedAgent && ticket.assignedAgent !== 'Unassigned'

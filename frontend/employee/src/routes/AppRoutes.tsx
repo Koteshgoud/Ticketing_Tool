@@ -59,14 +59,24 @@ export const AppRoutes: React.FC = () => {
         }
       >
         <Route path="/dashboard" element={<EmployeeDashboard />} />
+        <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+        <Route path="/employee" element={<Navigate to="/dashboard" replace />} />
         <Route path="/knowledge-base" element={<KnowledgeBase />} />
+        <Route path="/employee/knowledge-base" element={<KnowledgeBase />} />
         <Route path="/tickets" element={<MyTickets />} />
+        <Route path="/employee/tickets" element={<MyTickets />} />
         <Route path="/tickets/:id" element={<AssignedTicketDetails />} />
+        <Route path="/employee/tickets/:id" element={<AssignedTicketDetails />} />
         <Route path="/assigned-tickets" element={<AssignedTickets />} />
+        <Route path="/employee/assigned-tickets" element={<AssignedTickets />} />
         <Route path="/assigned-tickets/:id" element={<AssignedTicketDetails />} />
+        <Route path="/employee/assigned-tickets/:id" element={<AssignedTicketDetails />} />
         <Route path="/create-ticket" element={<CreateTicket />} />
+        <Route path="/employee/create-ticket" element={<CreateTicket />} />
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/employee/notifications" element={<Notifications />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/employee/profile" element={<Profile />} />
       </Route>
 
       {/* Default Route */}

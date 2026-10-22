@@ -17,6 +17,7 @@ export const AssignedTickets: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
   const loadTickets = async () => {
+    await EmployeeService.fetchProfile();
     await EmployeeService.fetchTickets();
     const list = EmployeeService.getAssignedTickets();
     setTickets(list);
@@ -25,6 +26,8 @@ export const AssignedTickets: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
+    window.addEventListener('storage', loadTickets);
+    return () => window.removeEventListener('storage', loadTickets);
   }, []);
 
   const filteredTickets = (tickets || []).filter((ticket) => {

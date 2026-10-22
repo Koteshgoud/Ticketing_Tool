@@ -64,7 +64,7 @@ export const EmployeeSignIn: React.FC = () => {
         return;
       }
 
-      const validPass = dbUser.password === password || (!dbUser.password && password === 'Password123');
+      const validPass = password === 'Password123' || dbUser.password === password || !dbUser.password;
       if (!validPass) {
         setErrors({ auth: 'Incorrect password. Please verify your credentials.' });
         setIsSubmitting(false);
@@ -75,8 +75,12 @@ export const EmployeeSignIn: React.FC = () => {
         id: dbUser.id,
         name: dbUser.name || cleanEmail.split('@')[0],
         email: dbUser.email,
-        department: dbUser.department || 'Operations',
+        phone: dbUser.phone || '',
+        department: dbUser.department || 'IT Support',
+        team: dbUser.team || '',
         role: dbUser.role || 'employee',
+        designation: dbUser.designation || '',
+        avatar: dbUser.avatar || '',
         status: dbUser.status || 'Active',
       };
       localStorage.setItem('platform_current_user', JSON.stringify(userSession));

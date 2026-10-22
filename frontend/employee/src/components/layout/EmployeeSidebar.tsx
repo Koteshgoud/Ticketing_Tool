@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Ticket,
@@ -22,6 +22,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
   assignedCount = 3,
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const navItems = [
     {
@@ -164,7 +165,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
             onClick={() => {
               localStorage.removeItem('platform_current_user');
               localStorage.setItem('platform_explicitly_logged_out', 'true');
-              window.location.hash = '#/signin';
+              navigate('/signin');
             }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/60 transition-colors cursor-pointer"
           >

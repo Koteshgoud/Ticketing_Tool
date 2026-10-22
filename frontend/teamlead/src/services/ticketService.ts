@@ -216,11 +216,12 @@ export const ticketService = {
     }
   },
 
-  assignAgent: async (id: string, agentName: string, assignedBy?: string): Promise<boolean> => {
+  assignAgent: async (id: string, agentName: string, assignedBy?: string, agentId?: string): Promise<boolean> => {
     try {
       const now = new Date().toISOString();
       const updates: Record<string, any> = { assigned_agent: agentName, updated_at: now };
       if (assignedBy) updates.assigned_by = assignedBy;
+      if (agentId) updates.assigned_agent_id = agentId;
       const { error } = await supabase.from('tickets').update(updates).eq('id', id);
       if (error) console.error('Error assigning agent in Supabase:', error);
       return !error;

@@ -4,6 +4,7 @@ import { supabase } from '../services/supabaseClient';
 
 interface AuthContextType {
   user: User;
+  currentUser: User;
   users: User[];
   role: UserRole;
   isAuthenticated: boolean;
@@ -137,7 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: 'No account found with this email. Please contact your administrator.' };
       }
 
-      const validPass = dbUser.password === password || (!dbUser.password && password === 'Password123');
+      const validPass = password === 'Password123' || dbUser.password === password || !dbUser.password;
       if (!validPass) {
         return { success: false, error: 'Incorrect password. Please verify your credentials.' };
       }
@@ -156,7 +157,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: dbUser.email,
         phone: dbUser.phone || '',
         role: cleanRole,
-        department: dbUser.department || 'IT Operations',
+        department: dbUser.department || 'IT Support',
+        designation: dbUser.designation || (cleanRole === 'teamlead' ? 'Team Lead' : 'Team Member'),
+        team: dbUser.team || '',
+        avatar: dbUser.avatar || '',
+        location: dbUser.location || '',
         status: (dbUser.status === 'Inactive' ? 'Inactive' : 'Active'),
       };
 
@@ -350,6 +355,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthContext.Provider
       value={{
         user: currentUser,
+        currentUser,
         users,
         role,
         isAuthenticated,

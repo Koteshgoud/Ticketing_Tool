@@ -10,6 +10,9 @@ export const Profile: React.FC = () => {
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
   // Form edit states
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -21,14 +24,33 @@ export const Profile: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const p = EmployeeService.getProfile();
-    setProfile(p);
-    setEditName(p.name);
-    setEditEmail(p.email);
-    setEditDepartment(p.department);
-    setEditRole(p.role);
-    setEditPhone(p.phone);
-    setEditAvatarUrl(p.avatarUrl || '');
+    let isMounted = true;
+    const loadProfile = async () => {
+      const p = EmployeeService.getProfile();
+      if (isMounted) {
+        setProfile(p);
+        setEditName(p.name);
+        setEditEmail(p.email);
+        setEditDepartment(p.department);
+        setEditRole(p.role);
+        setEditPhone(p.phone);
+        setEditAvatarUrl(p.avatarUrl || '');
+      }
+      const live = await EmployeeService.fetchProfile();
+      if (isMounted && live) {
+        setProfile(live);
+        setEditName(live.name);
+        setEditEmail(live.email);
+        setEditDepartment(live.department);
+        setEditRole(live.role);
+        setEditPhone(live.phone);
+        setEditAvatarUrl(live.avatarUrl || '');
+      }
+    };
+    loadProfile();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (!profile) return null;
@@ -47,18 +69,20 @@ export const Profile: React.FC = () => {
     setIsEditing(false);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updated = EmployeeService.updateProfile({
+    setIsSaving(true);
+    const updated = await EmployeeService.updateProfile({
       name: editName.trim() || profile.name,
-      email: editEmail.trim() || profile.email,
       department: editDepartment.trim() || profile.department,
-      role: editRole.trim() || profile.role,
       phone: editPhone.trim() || profile.phone,
       avatarUrl: editAvatarUrl,
     });
     setProfile(updated);
     setIsEditing(false);
+    setIsSaving(false);
+    setSaveSuccessMsg('Profile updated successfully.');
+    setTimeout(() => setSaveSuccessMsg(null), 3500);
     // Notify top nav and other listeners
     window.dispatchEvent(new Event('storage'));
   };
@@ -67,14 +91,16 @@ export const Profile: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const result = reader.result as string;
         if (isEditing) {
           setEditAvatarUrl(result);
         } else {
-          const updated = EmployeeService.updateProfile({ avatarUrl: result });
+          const updated = await EmployeeService.updateProfile({ avatarUrl: result });
           setProfile(updated);
           setEditAvatarUrl(result);
+          setSaveSuccessMsg('Profile photo updated.');
+          setTimeout(() => setSaveSuccessMsg(null), 3500);
         }
         window.dispatchEvent(new Event('storage'));
       };
@@ -82,11 +108,13 @@ export const Profile: React.FC = () => {
     }
   };
 
-  const handleRemovePhoto = () => {
+  const handleRemovePhoto = async () => {
     setEditAvatarUrl('');
-    const updated = EmployeeService.updateProfile({ avatarUrl: '' });
+    const updated = await EmployeeService.updateProfile({ avatarUrl: '' });
     setProfile(updated);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    setSaveSuccessMsg('Profile photo removed.');
+    setTimeout(() => setSaveSuccessMsg(null), 3500);
     window.dispatchEvent(new Event('storage'));
   };
 
@@ -102,6 +130,18 @@ export const Profile: React.FC = () => {
         onChange={handleImageFileChange}
         className="hidden"
       />
+
+      {saveSuccessMsg && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium flex items-center justify-between shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{saveSuccessMsg}</span>
+          </div>
+          <button onClick={() => setSaveSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Clean Profile Header Card */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
@@ -209,10 +249,11 @@ export const Profile: React.FC = () => {
                 variant="primary"
                 size="sm"
                 onClick={handleSaveProfile}
+                disabled={isSaving}
                 icon={<Save className="w-4 h-4" />}
-                className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs"
+                className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs disabled:opacity-50"
               >
-                Save Changes
+                {isSaving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           )}
@@ -364,9 +405,10 @@ export const Profile: React.FC = () => {
               <Button
                 type="submit"
                 variant="primary"
-                className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs"
+                disabled={isSaving}
+                className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs disabled:opacity-50"
               >
-                <Save className="w-4 h-4 mr-1.5" /> Save Changes
+                <Save className="w-4 h-4 mr-1.5" /> {isSaving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </div>

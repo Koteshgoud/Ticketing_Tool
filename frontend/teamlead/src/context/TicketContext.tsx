@@ -248,7 +248,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return t;
       })
     );
-    ticketService.assignAgent(ticketId, agentName, assignedByStr).catch(() => {});
+    ticketService.assignAgent(ticketId, agentName, assignedByStr, agentId).catch(() => {});
 
     teamLeadService.createNotification({
       ticketId,

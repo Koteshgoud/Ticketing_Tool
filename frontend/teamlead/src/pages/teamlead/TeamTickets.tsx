@@ -14,7 +14,7 @@ import { CheckCircle2 } from 'lucide-react';
 
 export const TeamTickets: React.FC = () => {
   const { tickets, selectedTicket, setSelectedTicket } = useTickets();
-  const { users } = useAuth();
+  const { currentUser, users } = useAuth();
   const outletContext = useOutletContext<{ globalSearch?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -34,7 +34,20 @@ export const TeamTickets: React.FC = () => {
   const itemsPerPage = 8;
 
   const tabs = ['All', 'Unassigned', 'In Progress', 'SLA Risk', 'Open', 'Pending', 'Escalated', 'Resolved', 'Closed'];
-  const agentsList = users.map((u) => u.name);
+
+  const leadTeam = (currentUser?.team || '').trim().toLowerCase();
+  const leadDept = (currentUser?.department || '').trim().toLowerCase();
+  const leadName = (currentUser?.name || '').trim().toLowerCase();
+  const leadId = (currentUser?.id || '').trim().toLowerCase();
+
+  const myTeamUsers = users.filter((u) => {
+    if (u.role !== 'employee') return false;
+    if (leadTeam && u.team) return u.team.trim().toLowerCase() === leadTeam;
+    if (leadDept && u.department) return u.department.trim().toLowerCase() === leadDept;
+    return true;
+  });
+  const teamMemberIds = new Set(myTeamUsers.map(e => e.id.toLowerCase()));
+  const teamMemberNames = new Set(myTeamUsers.map(e => e.name.toLowerCase()));
 
   // Helper functions for filtering
   const isTicketUnassigned = (t: Ticket) =>
@@ -47,6 +60,33 @@ export const TeamTickets: React.FC = () => {
     const s = (t.slaStatus || '').toLowerCase();
     return s.includes('risk') || s.includes('breach') || s.includes('approach');
   };
+
+  const isTicketForMyTeam = (t: Ticket) => {
+    const agent = (t.assignedAgent || '').toLowerCase();
+    const agentId = (t.assignedAgentId || '').toLowerCase();
+    const assignedBy = (t.assignedBy || '').toLowerCase();
+    const tDept = (t.department || '').toLowerCase();
+    const emp = (t.employee || '').toLowerCase();
+    const empId = (t.employeeId || '').toLowerCase();
+
+    if (leadName && (agent === leadName || agent.includes(leadName))) return true;
+    if (leadId && (agentId === leadId || agent.includes(leadId))) return true;
+    if (agent && teamMemberNames.has(agent)) return true;
+    if (agentId && teamMemberIds.has(agentId)) return true;
+    if (emp && teamMemberNames.has(emp)) return true;
+    if (empId && teamMemberIds.has(empId)) return true;
+    if (leadName && assignedBy.includes(leadName)) return true;
+    if (t.taggedMembers && t.taggedMembers.some(m => teamMemberIds.has(m.id?.toLowerCase()) || teamMemberNames.has(m.name?.toLowerCase()))) {
+      return true;
+    }
+    if (isTicketUnassigned(t)) {
+      if (!leadDept || !tDept || tDept.includes(leadDept) || leadDept.includes(tDept)) return true;
+    }
+    return false;
+  };
+
+  const myTeamTickets = tickets.filter(isTicketForMyTeam);
+  const agentsList = myTeamUsers.map((u) => u.name);
 
   // Synchronize URL query parameters (?filter=, ?status=, ?sla=)
   useEffect(() => {
@@ -94,15 +134,15 @@ export const TeamTickets: React.FC = () => {
 
   // Dynamic count badges per tab
   const getTabCount = (tab: string) => {
-    if (tab === 'All') return tickets.length;
-    if (tab === 'Unassigned') return tickets.filter(isTicketUnassigned).length;
-    if (tab === 'In Progress') return tickets.filter((t) => t.status === 'In Progress').length;
-    if (tab === 'SLA Risk') return tickets.filter(isTicketSLARisk).length;
-    return tickets.filter((t) => (t.status || '').toLowerCase() === tab.toLowerCase()).length;
+    if (tab === 'All') return myTeamTickets.length;
+    if (tab === 'Unassigned') return myTeamTickets.filter(isTicketUnassigned).length;
+    if (tab === 'In Progress') return myTeamTickets.filter((t) => t.status === 'In Progress').length;
+    if (tab === 'SLA Risk') return myTeamTickets.filter(isTicketSLARisk).length;
+    return myTeamTickets.filter((t) => (t.status || '').toLowerCase() === tab.toLowerCase()).length;
   };
 
   // Filtering Logic
-  const filteredTickets = tickets.filter((ticket) => {
+  const filteredTickets = myTeamTickets.filter((ticket) => {
     // Tab Filter
     if (activeTab === 'Unassigned') {
       if (!isTicketUnassigned(ticket)) return false;

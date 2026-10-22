@@ -33,14 +33,24 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
   const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let isMounted = true;
     const updateLocalState = async () => {
       setProfile(EmployeeService.getProfile());
+      const liveProfile = await EmployeeService.fetchProfile();
+      if (isMounted && liveProfile) {
+        setProfile(liveProfile);
+      }
       const notifs = await EmployeeService.fetchNotifications();
-      setNotifications(notifs);
+      if (isMounted) {
+        setNotifications(notifs);
+      }
     };
     updateLocalState();
     window.addEventListener('storage', updateLocalState);
-    return () => window.removeEventListener('storage', updateLocalState);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('storage', updateLocalState);
+    };
   }, []);
 
   useEffect(() => {
@@ -184,8 +194,8 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
                 className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
               />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-[#0284C7] text-white flex items-center justify-center font-bold text-xs shrink-0">
-                {profile.name ? profile.name.charAt(0) : 'M'}
+              <div className="w-7 h-7 rounded-full bg-[#0284C7] text-white flex items-center justify-center font-bold text-xs shrink-0 uppercase">
+                {profile.name && profile.name.trim() ? profile.name.trim().charAt(0).toUpperCase() : 'U'}
               </div>
             )}
             <div className="text-left hidden lg:block">

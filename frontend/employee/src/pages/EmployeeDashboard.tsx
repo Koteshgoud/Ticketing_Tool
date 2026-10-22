@@ -29,11 +29,8 @@ export const EmployeeDashboard: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [stats, setStats] = useState(() => EmployeeService.getSummaryStats());
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
   const loadDashboardData = async () => {
+    await EmployeeService.fetchProfile();
     await EmployeeService.fetchTickets();
     const myTickets = EmployeeService.getEmployeeTickets();
     const assignedTickets = EmployeeService.getAssignedTickets();
@@ -44,6 +41,12 @@ export const EmployeeDashboard: React.FC = () => {
     const summary = EmployeeService.getSummaryStats();
     setStats(summary);
   };
+
+  useEffect(() => {
+    loadDashboardData();
+    window.addEventListener('storage', loadDashboardData);
+    return () => window.removeEventListener('storage', loadDashboardData);
+  }, []);
 
   const filteredTickets = React.useMemo(() => {
     if (!activeFilter) return allTickets.slice(0, 10);

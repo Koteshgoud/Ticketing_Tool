@@ -21,7 +21,7 @@ import {
 export const TeamLeadDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { tickets, selectedTicket, setSelectedTicket } = useTickets();
-  const { users } = useAuth();
+  const { currentUser, users } = useAuth();
 
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [isCreateTicketModalOpen, setIsCreateTicketModalOpen] = useState(false);
@@ -45,19 +45,76 @@ export const TeamLeadDashboard: React.FC = () => {
     return s.includes('risk') || s.includes('breach') || s.includes('approach');
   };
 
-  // 1. Calculate Summary Card Metrics
-  const totalTickets = tickets.length;
-  const unassignedCount = tickets.filter(isTicketUnassigned).length;
-  const inProgressCount = tickets.filter((t) => t.status === 'In Progress').length;
-  const slaRiskCount = tickets.filter(isTicketSLARisk).length;
+  const leadTeam = (currentUser?.team || '').trim().toLowerCase();
+  const leadDept = (currentUser?.department || '').trim().toLowerCase();
+  const leadName = (currentUser?.name || '').trim().toLowerCase();
+  const leadId = (currentUser?.id || '').trim().toLowerCase();
 
-  // 2. Prepare Team Members (Strictly employees, never admins or team leads)
-  const employeeUsers = users.filter((u) => u.role === 'employee');
-  const displayEmployees = employeeUsers.slice(0, 4);
+  // 1. Prepare Team Members (strictly the logged-in Team Lead's own team members)
+  const displayEmployees = users.filter((u) => {
+    if (u.role !== 'employee') return false;
+    // Match by team if team lead has a team defined (e.g. "Team Alpha" for Kotesh -> Uday; "Team Beta" for Mounika -> Bhavya)
+    if (leadTeam && u.team) {
+      return u.team.trim().toLowerCase() === leadTeam;
+    }
+    // Match by department if no team specified
+    if (leadDept && u.department) {
+      return u.department.trim().toLowerCase() === leadDept;
+    }
+    return true;
+  });
+
+  const teamMemberIds = new Set(displayEmployees.map(e => e.id.toLowerCase()));
+  const teamMemberNames = new Set(displayEmployees.map(e => e.name.toLowerCase()));
+
+  // 2. Filter tickets belonging to this Team Lead's team/workload
+  const isTicketForMyTeam = (t: Ticket) => {
+    const agent = (t.assignedAgent || '').toLowerCase();
+    const agentId = (t.assignedAgentId || '').toLowerCase();
+    const assignedBy = (t.assignedBy || '').toLowerCase();
+    const tDept = (t.department || '').toLowerCase();
+    const emp = (t.employee || '').toLowerCase();
+    const empId = (t.employeeId || '').toLowerCase();
+
+    // Assigned directly to this Team Lead
+    if (leadName && (agent === leadName || agent.includes(leadName))) return true;
+    if (leadId && (agentId === leadId || agent.includes(leadId))) return true;
+
+    // Assigned to a member of this team
+    if (agent && teamMemberNames.has(agent)) return true;
+    if (agentId && teamMemberIds.has(agentId)) return true;
+
+    // Created or requested by a member of this team
+    if (emp && teamMemberNames.has(emp)) return true;
+    if (empId && teamMemberIds.has(empId)) return true;
+
+    // Assigned by this Team Lead
+    if (leadName && assignedBy.includes(leadName)) return true;
+
+    // Tagged members include someone from this team
+    if (t.taggedMembers && t.taggedMembers.some(m => teamMemberIds.has(m.id?.toLowerCase()) || teamMemberNames.has(m.name?.toLowerCase()))) {
+      return true;
+    }
+
+    // Unassigned tickets in this department
+    if (isTicketUnassigned(t)) {
+      if (!leadDept || !tDept || tDept.includes(leadDept) || leadDept.includes(tDept)) return true;
+    }
+
+    return false;
+  };
+
+  const myTeamTickets = tickets.filter(isTicketForMyTeam);
+
+  // 3. Calculate Summary Card Metrics based on team scope
+  const totalTickets = myTeamTickets.length;
+  const unassignedCount = myTeamTickets.filter(isTicketUnassigned).length;
+  const inProgressCount = myTeamTickets.filter((t) => t.status === 'In Progress').length;
+  const slaRiskCount = myTeamTickets.filter(isTicketSLARisk).length;
 
   // Helper to count active tickets for a user
   const getEmployeeActiveTicketCount = (empId: string, empName: string) => {
-    return tickets.filter(
+    return myTeamTickets.filter(
       (t) =>
         (t.employeeId === empId ||
           t.employee === empName ||
@@ -68,8 +125,8 @@ export const TeamLeadDashboard: React.FC = () => {
     ).length;
   };
 
-  // 3. Tickets Needing Attention (Critical, High priority, SLA risk, Escalated, Pending)
-  const ticketsNeedingAttention = tickets
+  // 4. Tickets Needing Attention (Critical, High priority, SLA risk, Escalated, Pending)
+  const ticketsNeedingAttention = myTeamTickets
     .filter(
       (t) =>
         t.priority === 'Critical' ||
@@ -81,7 +138,7 @@ export const TeamLeadDashboard: React.FC = () => {
     )
     .slice(0, 5);
 
-  // 4. Quick Filter Toolbar Pills and Filtered Recent Tickets
+  // 5. Quick Filter Toolbar Pills and Filtered Recent Tickets
   const quickFilterPills: Array<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'> = [
     'All',
     'Unassigned',
@@ -93,19 +150,19 @@ export const TeamLeadDashboard: React.FC = () => {
   const getQuickFilterCount = (filter: 'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated') => {
     switch (filter) {
       case 'All':
-        return tickets.length;
+        return myTeamTickets.length;
       case 'Unassigned':
-        return tickets.filter(isTicketUnassigned).length;
+        return myTeamTickets.filter(isTicketUnassigned).length;
       case 'In Progress':
-        return tickets.filter((t) => t.status === 'In Progress').length;
+        return myTeamTickets.filter((t) => t.status === 'In Progress').length;
       case 'SLA Risk':
-        return tickets.filter(isTicketSLARisk).length;
+        return myTeamTickets.filter(isTicketSLARisk).length;
       case 'Escalated':
-        return tickets.filter((t) => t.status === 'Escalated').length;
+        return myTeamTickets.filter((t) => t.status === 'Escalated').length;
     }
   };
 
-  const filteredRecentTickets = [...tickets]
+  const filteredRecentTickets = [...myTeamTickets]
     .filter((t) => {
       if (dashboardFilter === 'Unassigned') return isTicketUnassigned(t);
       if (dashboardFilter === 'In Progress') return t.status === 'In Progress';
@@ -348,9 +405,9 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {displayEmployees.map((emp, index) => {
+            {displayEmployees.map((emp) => {
               const ticketCount = getEmployeeActiveTicketCount(emp.id, emp.name);
-              const isBusy = index === 2 || ticketCount >= 4;
+              const isBusy = ticketCount >= 4;
               const firstName = emp.name.split(' ')[0];
 
               return (
