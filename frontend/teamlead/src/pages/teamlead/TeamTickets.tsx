@@ -38,10 +38,11 @@ export const TeamTickets: React.FC = () => {
 
   // Helper functions for filtering
   const isTicketUnassigned = (t: Ticket) =>
-    !t.assignedAgent ||
-    t.assignedAgent.trim() === '' ||
-    t.assignedAgent.toLowerCase() === 'unassigned' ||
-    t.assignedToType === 'unassigned';
+    t.status !== 'Resolved' &&
+    t.status !== 'Closed' &&
+    (!t.assignedAgent ||
+      t.assignedAgent.trim() === '' ||
+      t.assignedAgent.toLowerCase() === 'unassigned');
 
   const isTicketSLARisk = (t: Ticket) => {
     const s = (t.slaStatus || '').toLowerCase();

@@ -42,6 +42,7 @@ export const DashboardPage: React.FC = () => {
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Modal State for Admin Create Ticket
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -62,12 +63,18 @@ export const DashboardPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleDepartment = (deptName: string) => {
+    let next: string[];
     if (selectedDepartments.includes(deptName)) {
       if (selectedDepartments.length === 1) return;
-      setSelectedDepartments(selectedDepartments.filter((d) => d !== deptName));
+      next = selectedDepartments.filter((d) => d !== deptName);
     } else {
-      setSelectedDepartments([...selectedDepartments, deptName]);
+      next = [...selectedDepartments, deptName];
     }
+    setSelectedDepartments(next);
+    setSelectedTeamLeadIds([]);
+    setSelectedTeamLeadObjs([]);
+    setSelectedEmployeeIds([]);
+    setSelectedEmployeeObjs([]);
   };
 
   const isOtherDeptSelected = selectedDepartments.includes('Other');
@@ -77,17 +84,60 @@ export const DashboardPage: React.FC = () => {
     dept === 'Other' ? (customDepartment.trim() || 'Other Department') : dept
   );
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     setIsLoading(true);
-    const statsData = await AdminApiService.getDashboardStats();
-    const ticketsData = await AdminApiService.getTickets('all');
+    setLoadError(false);
+    const [statsData, ticketsData] = await Promise.all([
+      AdminApiService.getDashboardStats(force),
+      AdminApiService.getTickets('all', force),
+    ]);
     setStats(statsData);
     setTickets(ticketsData);
+    setLoadError(statsData === null && ticketsData.length === 0);
     setIsLoading(false);
   };
 
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+    const run = async (force = false) => {
+      setIsLoading(true);
+      setLoadError(false);
+      try {
+        const [statsData, ticketsData] = await Promise.all([
+          AdminApiService.getDashboardStats(force),
+          AdminApiService.getTickets('all', force),
+        ]);
+        if (cancelled) return;
+        setStats(statsData);
+        setTickets(ticketsData);
+        setLoadError(statsData === null && ticketsData.length === 0);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void run(false);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'ticket_refresh_event' || e.key === 'itsm_tickets_version') {
+        AdminApiService.invalidateCache();
+        void run(true);
+      }
+    };
+    const onTicketUpdated = () => {
+      AdminApiService.invalidateCache();
+      void run(true);
+    };
+
+    window.addEventListener('ticket-updated', onTicketUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ticket-updated', onTicketUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -138,6 +188,7 @@ export const DashboardPage: React.FC = () => {
         priority: newPriority,
         description: newDescription.trim(),
         attachments: attachmentStrings,
+        rawFiles: attachedFiles.map((f) => f.file).filter(Boolean) as File[],
         teamLeads: selectedTeamLeadObjs.map((tl) => ({
           id: tl.id,
           employeeId: tl.employeeId,
@@ -196,8 +247,20 @@ export const DashboardPage: React.FC = () => {
     t.assignedTo.trim() === '' ||
     t.assignedTo.toLowerCase() === 'unassigned';
 
-  const unassignedCount = tickets.filter(
-    (t) => isUnassigned(t) && t.status !== 'Closed' && t.status !== 'Resolved'
+  const unassignedCount = stats?.unassignedTickets ?? tickets.filter(
+    (t) => isUnassigned(t) && !['resolved', 'closed'].includes((t.status || '').toLowerCase())
+  ).length;
+
+  const escalatedCount = stats?.escalatedTickets ?? tickets.filter(
+    (t) => (t.status || '').toLowerCase() === 'escalated' && !['resolved', 'closed'].includes((t.status || '').toLowerCase())
+  ).length;
+
+  const slaRiskCount = stats?.slaRiskCount ?? tickets.filter(
+    (t) => (t.slaStatus || '').toLowerCase().includes('risk') && !['resolved', 'closed'].includes((t.status || '').toLowerCase())
+  ).length;
+
+  const slaBreachedCount = stats?.slaBreachedCount ?? tickets.filter(
+    (t) => (t.slaStatus || '').toLowerCase().includes('breach') && !['resolved', 'closed'].includes((t.status || '').toLowerCase())
   ).length;
 
   const filteredTickets = tickets.filter((t) => {
@@ -209,10 +272,10 @@ export const DashboardPage: React.FC = () => {
 
     const matchesStatus =
       statusFilter === 'all' ||
-      (statusFilter === 'unassigned' && isUnassigned(t) && t.status !== 'Closed' && t.status !== 'Resolved') ||
-      (statusFilter === 'escalated' && (t.status || '').toLowerCase() === 'escalated') ||
-      (statusFilter === 'sla risk' && (t.slaStatus || '').toLowerCase().includes('risk')) ||
-      (statusFilter === 'sla breached' && (t.slaStatus || '').toLowerCase().includes('breach')) ||
+      (statusFilter === 'unassigned' && isUnassigned(t) && !['resolved', 'closed'].includes((t.status || '').toLowerCase())) ||
+      (statusFilter === 'escalated' && (t.status || '').toLowerCase() === 'escalated' && !['resolved', 'closed'].includes((t.status || '').toLowerCase())) ||
+      (statusFilter === 'sla risk' && (t.slaStatus || '').toLowerCase().includes('risk') && !['resolved', 'closed'].includes((t.status || '').toLowerCase())) ||
+      (statusFilter === 'sla breached' && (t.slaStatus || '').toLowerCase().includes('breach') && !['resolved', 'closed'].includes((t.status || '').toLowerCase())) ||
       (t.status || '').toLowerCase() === statusFilter.toLowerCase();
 
     return matchesSearch && matchesStatus;
@@ -281,6 +344,10 @@ export const DashboardPage: React.FC = () => {
 
   const tableInfo = getTableInfo();
   const TableTitleIcon = tableInfo.icon;
+
+  // Never render a misleading "0" when the API failed: show a dash instead.
+  const displayCount = (value: number | undefined) =>
+    loadError ? '—' : value === undefined ? '—' : value;
 
   const ticketColumns: Column<Ticket>[] = [
     {
@@ -376,6 +443,24 @@ export const DashboardPage: React.FC = () => {
         </Button>
       </div>
 
+      {/* Load error / retry state */}
+      {loadError && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-red-700">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            Could not load ticket data. Counts may be unavailable.
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => loadData()}
+            className="shrink-0"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       {/* 5 Interactive Summary Cards matching Sidebar Workspace */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Total Tickets */}
@@ -396,7 +481,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-slate-900 leading-none">
-              {stats?.totalTickets ?? tickets.length}
+              {displayCount(stats?.totalTickets ?? tickets.length)}
             </div>
             <p className="text-[11px] text-slate-500 mt-1 font-medium">All workspace issues</p>
           </div>
@@ -420,7 +505,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-sky-700 leading-none">
-              {unassignedCount}
+              {displayCount(unassignedCount)}
             </div>
             <p className="text-[11px] text-sky-600 mt-1 font-medium">Awaiting assignment</p>
           </div>
@@ -444,7 +529,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-orange-600 leading-none">
-              {stats?.escalatedTickets ?? tickets.filter(t => (t.status || '').toLowerCase() === 'escalated').length}
+              {displayCount(escalatedCount)}
             </div>
             <p className="text-[11px] text-orange-600 mt-1 font-medium">Requires lead action</p>
           </div>
@@ -468,7 +553,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-amber-600 leading-none">
-              {stats?.slaRiskCount ?? tickets.filter(t => (t.slaStatus || '').toLowerCase().includes('risk')).length}
+              {displayCount(slaRiskCount)}
             </div>
             <p className="text-[11px] text-amber-600 mt-1 font-medium">Approaching deadline</p>
           </div>
@@ -492,7 +577,7 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="mt-2.5">
             <div className="text-[22px] font-bold text-red-600 leading-none">
-              {stats?.slaBreachedCount ?? tickets.filter(t => (t.slaStatus || '').toLowerCase().includes('breach')).length}
+              {displayCount(slaBreachedCount)}
             </div>
             <p className="text-[11px] text-red-600 mt-1 font-medium">Critical overdue</p>
           </div>

@@ -71,6 +71,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="my-tickets" element={<MyTickets />} />
         <Route path="employees" element={<Employees />} />
         <Route path="escalations" element={<Escalations />} />
+        <Route path="clients" element={<Navigate to="/teamlead/dashboard" replace />} />
         <Route path="reports" element={<Reports />} />
         <Route path="knowledge-base" element={<TeamLeadKB />} />
         <Route path="profile" element={<TeamLeadProfile />} />

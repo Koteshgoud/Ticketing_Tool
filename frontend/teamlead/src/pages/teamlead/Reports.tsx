@@ -27,6 +27,7 @@ export const Reports: React.FC = () => {
   // 1. Status breakdown
   const statusData = [
     { name: 'Open', count: tickets.filter((t) => t.status === 'Open').length },
+    { name: 'In Progress', count: tickets.filter((t) => t.status === 'In Progress').length },
     { name: 'Pending', count: tickets.filter((t) => t.status === 'Pending').length },
     { name: 'Resolved', count: tickets.filter((t) => t.status === 'Resolved').length },
     { name: 'Closed', count: tickets.filter((t) => t.status === 'Closed').length },
@@ -47,21 +48,30 @@ export const Reports: React.FC = () => {
     return {
       name: u.name.split(' ')[0],
       Open: userTickets.filter((t) => t.status === 'Open').length,
+      'In Progress': userTickets.filter((t) => t.status === 'In Progress').length,
       Pending: userTickets.filter((t) => t.status === 'Pending').length,
       Resolved: userTickets.filter((t) => t.status === 'Resolved' || t.status === 'Closed').length,
     };
   });
 
-  // 4. Resolution Performance Trend (Weekly mock data)
-  const resolutionTrendData = [
-    { day: 'Mon', created: 14, resolved: 12 },
-    { day: 'Tue', created: 18, resolved: 19 },
-    { day: 'Wed', created: 22, resolved: 20 },
-    { day: 'Thu', created: 15, resolved: 17 },
-    { day: 'Fri', created: 25, resolved: 23 },
-    { day: 'Sat', created: 8, resolved: 9 },
-    { day: 'Sun', created: 6, resolved: 7 },
-  ];
+  // 4. Resolution Performance Trend — derived from real ticket timestamps (last 7 days)
+  const dayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' });
+  const resolutionTrendData = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const created = tickets.filter((t) => {
+      const ts = new Date(t.createdAt).getTime();
+      return ts >= dayStart && ts < dayEnd;
+    }).length;
+    const resolved = tickets.filter((t) => {
+      if (t.status !== 'Resolved' && t.status !== 'Closed') return false;
+      const ts = new Date(t.updatedAt || t.createdAt).getTime();
+      return ts >= dayStart && ts < dayEnd;
+    }).length;
+    return { day: dayFormatter.format(d), created, resolved };
+  });
 
   return (
     <div className="space-y-6">
@@ -131,6 +141,7 @@ export const Reports: React.FC = () => {
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="Open" fill="#0ea5e9" stackId="a" />
+                <Bar dataKey="In Progress" fill="#8b5cf6" stackId="a" />
                 <Bar dataKey="Pending" fill="#f59e0b" stackId="a" />
                 <Bar dataKey="Resolved" fill="#10b981" stackId="a" />
               </BarChart>
@@ -177,12 +188,24 @@ export const Reports: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                {users.map((u, idx) => {
+                {users.map((u) => {
                   const uTickets = tickets.filter((t) => t.assignedAgent === u.name);
                   const openCount = uTickets.filter((t) => t.status === 'Open' || t.status === 'In Progress' || t.status === 'Pending').length;
                   const resolvedCount = uTickets.filter((t) => t.status === 'Resolved' || t.status === 'Closed').length;
-                  const slaRate = idx === 0 ? '98.5%' : idx === 1 ? '96.2%' : idx === 2 ? '99.0%' : '94.8%';
-                  const avgTime = idx === 0 ? '1.8 hrs' : idx === 1 ? '2.4 hrs' : idx === 2 ? '1.5 hrs' : '3.1 hrs';
+                  const slaWithin = uTickets.filter((t) => (t.slaStatus || '').toLowerCase() !== 'breached').length;
+                  const slaRate = uTickets.length > 0 ? `${((slaWithin / uTickets.length) * 100).toFixed(1)}%` : '—';
+                  const resolvedTickets = uTickets.filter((t) => t.status === 'Resolved' || t.status === 'Closed');
+                  const avgMs = resolvedTickets.length > 0
+                    ? resolvedTickets.reduce((sum, t) => {
+                        const diff = new Date(t.updatedAt || t.createdAt).getTime() - new Date(t.createdAt).getTime();
+                        return sum + (isNaN(diff) || diff < 0 ? 0 : diff);
+                      }, 0) / resolvedTickets.length
+                    : 0;
+                  const avgTime = resolvedTickets.length > 0
+                    ? avgMs < 60 * 60 * 1000
+                      ? `${Math.max(1, Math.round(avgMs / 60000))} min`
+                      : `${(avgMs / 3600000).toFixed(1)} hrs`
+                    : '—';
 
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">

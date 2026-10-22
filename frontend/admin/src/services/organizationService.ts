@@ -4,7 +4,7 @@
  * Strictly dynamically populated from Database; zero mock data.
  */
 
-import { supabase } from './supabaseClient';
+import { apiRequest, apiRequestSafe } from './backendAuth';
 
 export interface DepartmentItem {
   id: string;
@@ -45,6 +45,8 @@ export const TEAM_LEADS: TeamLeadItem[] = [];
 
 export const EMPLOYEES: EmployeeItem[] = [];
 
+const _leadEmployeesCache = new Map<string, EmployeeItem[]>();
+
 export const OrganizationService = {
   getDepartments(): DepartmentItem[] {
     return DEPARTMENTS;
@@ -57,21 +59,50 @@ export const OrganizationService = {
     );
   },
 
-  getEmployeesByTeamLead(teamLeadId: string): EmployeeItem[] {
-    const lead = this.getTeamLeadById(teamLeadId);
-    const byDirectId = EMPLOYEES.filter((emp) => emp.teamLeadId && emp.teamLeadId === teamLeadId);
-    if (byDirectId.length > 0) return byDirectId;
-
-    if (lead) {
-      const leadDept = (lead.departmentName || '').toLowerCase();
-      const byDept = EMPLOYEES.filter((emp) => {
-        const empDept = (emp.departmentName || '').toLowerCase();
-        return empDept === leadDept || (empDept.includes('it') && leadDept.includes('it'));
+  async fetchEmployeesByTeamLead(teamLeadId: string): Promise<EmployeeItem[]> {
+    if (!teamLeadId) return [];
+    try {
+      const res = await apiRequestSafe<any[]>(`/team-leads/${encodeURIComponent(teamLeadId)}/employees`);
+      if (res.error) {
+        throw new Error(res.error);
+      }
+      const raw = Array.isArray(res.data) ? res.data : [];
+      const lead = this.getTeamLeadById(teamLeadId);
+      const items: EmployeeItem[] = raw.map((u: any) => {
+        const rawDept = u.department || lead?.departmentName || 'IT Support';
+        const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === rawDept.toLowerCase()) || DEPARTMENTS[0];
+        return {
+          id: u.id,
+          employeeId: u.id,
+          name: u.name,
+          role: u.designation || 'Team Member',
+          teamLeadId: teamLeadId,
+          departmentId: deptObj.id,
+          departmentName: rawDept,
+          email: u.email,
+        };
       });
-      if (byDept.length > 0) return byDept;
-    }
+      _leadEmployeesCache.set(teamLeadId, items);
 
-    return EMPLOYEES;
+      for (const item of items) {
+        const idx = EMPLOYEES.findIndex(e => e.id === item.id);
+        if (idx >= 0) EMPLOYEES[idx] = item;
+        else EMPLOYEES.push(item);
+      }
+
+      return items;
+    } catch (e: any) {
+      console.error(`Failed to fetch employees for team lead ${teamLeadId}:`, e);
+      throw e;
+    }
+  },
+
+  getEmployeesByTeamLead(teamLeadId: string): EmployeeItem[] {
+    if (!teamLeadId) return [];
+    if (_leadEmployeesCache.has(teamLeadId)) {
+      return _leadEmployeesCache.get(teamLeadId)!;
+    }
+    return EMPLOYEES.filter((emp) => emp.teamLeadId && emp.teamLeadId === teamLeadId);
   },
 
   searchEmployees(teamLeadId: string, query: string): EmployeeItem[] {
@@ -158,11 +189,8 @@ export const OrganizationService = {
 
   async syncFromDatabase(): Promise<void> {
     try {
-      const { data: dbUsers, error } = await supabase
-        .from('users')
-        .select('*');
-
-      if (error || !dbUsers) return;
+      const dbUsers = await apiRequest<any[]>('/users/directory');
+      if (!Array.isArray(dbUsers)) return;
 
       TEAM_LEADS.length = 0;
       EMPLOYEES.length = 0;

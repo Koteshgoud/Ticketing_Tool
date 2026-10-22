@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -9,6 +9,8 @@ import {
   X,
   BookOpen
 } from 'lucide-react';
+import { clearBackendSession } from '../../services/backendAuth';
+import { EmployeeService } from '../../services/employeeService';
 
 interface EmployeeSidebarProps {
   isOpen?: boolean;
@@ -19,9 +21,33 @@ interface EmployeeSidebarProps {
 export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
   isOpen = false,
   onClose,
-  assignedCount = 3,
+  assignedCount: propAssignedCount,
 }) => {
   const location = useLocation();
+  const [internalCount, setInternalCount] = useState<number>(() => {
+    return EmployeeService.getAssignedTickets().length;
+  });
+
+  useEffect(() => {
+    if (propAssignedCount !== undefined) return;
+    let cancelled = false;
+    const updateCount = async () => {
+      await EmployeeService.fetchTickets();
+      if (!cancelled) {
+        setInternalCount(EmployeeService.getAssignedTickets().length);
+      }
+    };
+    updateCount();
+    window.addEventListener('ticket-updated', updateCount);
+    window.addEventListener('storage', updateCount);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ticket-updated', updateCount);
+      window.removeEventListener('storage', updateCount);
+    };
+  }, [propAssignedCount]);
+
+  const effectiveCount = propAssignedCount !== undefined ? propAssignedCount : internalCount;
 
   const navItems = [
     {
@@ -38,7 +64,7 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
       title: 'Assigned Tickets',
       path: '/assigned-tickets',
       icon: <UserCheck className="w-4 h-4" />,
-      badge: assignedCount,
+      badge: effectiveCount,
     },
     {
       title: 'My Tickets',
@@ -162,6 +188,8 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
           <button
             type="button"
             onClick={() => {
+              EmployeeService.clearCache();
+              clearBackendSession();
               localStorage.removeItem('platform_current_user');
               localStorage.setItem('platform_explicitly_logged_out', 'true');
               window.location.hash = '#/signin';

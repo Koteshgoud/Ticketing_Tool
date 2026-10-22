@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { UserCheck, Search, Filter, RefreshCw, Eye, Clock } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import type { EmployeeTicket } from '../types';
@@ -11,9 +11,13 @@ import { Table, type Column } from '../components/ui/Table';
 
 export const AssignedTickets: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const paramStatus = searchParams.get('status');
+
   const [tickets, setTickets] = useState<EmployeeTicket[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>(paramStatus || 'ALL');
 
   const loadTickets = async () => {
     await EmployeeService.fetchTickets();
@@ -24,6 +28,12 @@ export const AssignedTickets: React.FC = () => {
   useEffect(() => {
     loadTickets();
   }, []);
+
+  useEffect(() => {
+    if (paramStatus) {
+      setStatusFilter(paramStatus);
+    }
+  }, [location.search]);
 
   const filteredTickets = (tickets || []).filter((ticket) => {
     const matchesSearch =

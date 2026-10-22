@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Ticket, Lock, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { Ticket, Lock, CheckCircle2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import { supabase } from '../../services/supabaseClient';
+import { ApiError, apiRequest } from '../../services/backendAuth';
 
 export const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate();
@@ -13,6 +13,8 @@ export const ResetPasswordPage: React.FC = () => {
   const [code, setCode] = useState(queryParams.get('code') || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -45,49 +47,30 @@ export const ResetPasswordPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    const cleanEmail = email.trim().toLowerCase();
+    setErrors({});
 
     try {
-      const { data: dbUser, error: findErr } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      if (findErr || !dbUser) {
-        setErrors({ email: 'No account found with this email address.' });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Verify reset code
-      if (dbUser.invite_token && dbUser.invite_token.startsWith('reset-')) {
-        const expectedCode = dbUser.invite_token.replace('reset-', '');
-        if (code.trim() !== expectedCode) {
-          setErrors({ code: 'Invalid verification code. Please check your email.' });
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      const { error: updErr } = await supabase
-        .from('users')
-        .update({
-          password: password,
-          invite_token: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('email', cleanEmail);
-
-      if (updErr) {
-        setErrors({ general: 'Failed to update password. Please try again.' });
-        setIsSubmitting(false);
-        return;
-      }
-
+      // The backend verifies the one-time code and hashes the new password.
+      // No password value is ever written to Supabase directly from the UI.
+      await apiRequest<{ message: string }>('/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          code: code.trim(),
+          new_password: password,
+        }),
+      });
       setIsSuccess(true);
-    } catch (err: any) {
-      setErrors({ general: 'Error processing password reset.' });
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Error processing password reset.';
+      if (err instanceof ApiError && err.status === 400 && /code/i.test(message)) {
+        setErrors({ code: message });
+      } else if (err instanceof ApiError && err.status === 403) {
+        setErrors({ email: 'Password reset is restricted to administrator accounts.' });
+      } else {
+        setErrors({ general: message });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -116,7 +99,7 @@ export const ResetPasswordPage: React.FC = () => {
               </div>
               <h3 className="text-lg font-bold text-slate-900">Password Reset Complete!</h3>
               <p className="text-xs text-slate-600">
-                Your admin password has been updated in the database.
+                Your admin password has been updated. Sign in with your new password.
               </p>
               <Button
                 variant="primary"
@@ -160,7 +143,7 @@ export const ResetPasswordPage: React.FC = () => {
 
               <Input
                 label="New Password *"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="At least 8 characters"
                 value={password}
                 onChange={(e) => {
@@ -169,11 +152,23 @@ export const ResetPasswordPage: React.FC = () => {
                 }}
                 error={errors.password}
                 icon={<Lock className="w-4 h-4" />}
+                rightElement={
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-slate-400 hover:text-slate-600 focus:outline-none p-1 transition-colors cursor-pointer"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
               />
 
               <Input
                 label="Confirm New Password *"
-                type="password"
+                type={showConfirmPassword ? 'text' : 'password'}
                 placeholder="Re-enter new password"
                 value={confirmPassword}
                 onChange={(e) => {
@@ -182,6 +177,18 @@ export const ResetPasswordPage: React.FC = () => {
                 }}
                 error={errors.confirmPassword}
                 icon={<Lock className="w-4 h-4" />}
+                rightElement={
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="text-slate-400 hover:text-slate-600 focus:outline-none p-1 transition-colors cursor-pointer"
+                    title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
               />
 
               <Button

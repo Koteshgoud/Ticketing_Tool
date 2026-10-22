@@ -1,10 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { EmployeeTopNav } from './EmployeeTopNav';
 import { EmployeeSidebar } from './EmployeeSidebar';
+import { EmployeeService } from '../../services/employeeService';
 
 export const EmployeeLayout: React.FC = () => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [assignedCount, setAssignedCount] = useState<number>(() => {
+    return EmployeeService.getAssignedTickets().length;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const updateAssignedCount = async () => {
+      await EmployeeService.fetchTickets();
+      if (!cancelled) {
+        setAssignedCount(EmployeeService.getAssignedTickets().length);
+      }
+    };
+    updateAssignedCount();
+    window.addEventListener('ticket-updated', updateAssignedCount);
+    window.addEventListener('storage', updateAssignedCount);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ticket-updated', updateAssignedCount);
+      window.removeEventListener('storage', updateAssignedCount);
+    };
+  }, []);
 
   return (
     <div className="h-screen bg-[#F8FAFC] text-slate-900 flex overflow-hidden font-sans">
@@ -12,6 +34,7 @@ export const EmployeeLayout: React.FC = () => {
       <EmployeeSidebar
         isOpen={isMobileSidebarOpen}
         onClose={() => setIsMobileSidebarOpen(false)}
+        assignedCount={assignedCount}
       />
 
       {/* Main Container (Top Navigation + Scrollable Page Content) */}

@@ -19,6 +19,7 @@ import type { EmployeeTicket } from '../types';
 
 export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [recentTickets, setRecentTickets] = useState<EmployeeTicket[]>([]);
   const [stats, setStats] = useState({
     myTicketsCount: 0,
@@ -30,16 +31,33 @@ export const EmployeeDashboard: React.FC = () => {
   });
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    let cancelled = false;
+    const loadDashboardData = async (force = false) => {
+      try {
+        await EmployeeService.fetchTickets(force);
+        if (cancelled) return;
+        const employeeTickets = EmployeeService.getEmployeeTickets();
+        const summary = EmployeeService.getSummaryStats();
+        if (cancelled) return;
+        setRecentTickets(employeeTickets.slice(0, 5));
+        setStats(summary);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
 
-  const loadDashboardData = async () => {
-    await EmployeeService.fetchTickets();
-    const employeeTickets = EmployeeService.getEmployeeTickets();
-    const summary = EmployeeService.getSummaryStats();
-    setRecentTickets(employeeTickets.slice(0, 5));
-    setStats(summary);
-  };
+    loadDashboardData();
+    const onTicketUpdated = () => loadDashboardData(true);
+    window.addEventListener('ticket-updated', onTicketUpdated);
+    window.addEventListener('storage', onTicketUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ticket-updated', onTicketUpdated);
+      window.removeEventListener('storage', onTicketUpdated);
+    };
+  }, []);
 
   const recentColumns: Column<EmployeeTicket>[] = [
     {
@@ -175,9 +193,12 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
 
         {/* Open */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => navigate('/tickets?status=Open')}
+          className="bg-white border border-slate-200 hover:border-blue-400 rounded-xl p-3.5 shadow-2xs hover:shadow-xs cursor-pointer transition-all flex flex-col justify-between group"
+        >
           <div className="flex items-start justify-between">
-            <span className="text-xs font-semibold text-slate-600">Open</span>
+            <span className="text-xs font-semibold text-slate-600 group-hover:text-blue-700 transition-colors">Open</span>
             <div className="p-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
               <Hourglass className="w-3.5 h-3.5" />
             </div>
@@ -189,9 +210,12 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
 
         {/* In Progress */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => navigate('/tickets?status=In Progress')}
+          className="bg-white border border-slate-200 hover:border-[#0284C7] rounded-xl p-3.5 shadow-2xs hover:shadow-xs cursor-pointer transition-all flex flex-col justify-between group"
+        >
           <div className="flex items-start justify-between">
-            <span className="text-xs font-semibold text-slate-600">In Progress</span>
+            <span className="text-xs font-semibold text-slate-600 group-hover:text-[#0284C7] transition-colors">In Progress</span>
             <div className="p-1 bg-sky-50 text-[#0284C7] rounded border border-sky-200">
               <Clock className="w-3.5 h-3.5" />
             </div>
@@ -203,9 +227,12 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
 
         {/* Pending */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => navigate('/tickets?status=Pending')}
+          className="bg-white border border-slate-200 hover:border-amber-400 rounded-xl p-3.5 shadow-2xs hover:shadow-xs cursor-pointer transition-all flex flex-col justify-between group"
+        >
           <div className="flex items-start justify-between">
-            <span className="text-xs font-semibold text-slate-600">Pending</span>
+            <span className="text-xs font-semibold text-slate-600 group-hover:text-amber-700 transition-colors">Pending</span>
             <div className="p-1 bg-amber-50 text-amber-600 rounded border border-amber-200">
               <AlertCircle className="w-3.5 h-3.5" />
             </div>
@@ -217,9 +244,12 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
 
         {/* Resolved */}
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs flex flex-col justify-between">
+        <div
+          onClick={() => navigate('/tickets?status=Resolved')}
+          className="bg-white border border-slate-200 hover:border-emerald-400 rounded-xl p-3.5 shadow-2xs hover:shadow-xs cursor-pointer transition-all flex flex-col justify-between group"
+        >
           <div className="flex items-start justify-between">
-            <span className="text-xs font-semibold text-slate-600">Resolved</span>
+            <span className="text-xs font-semibold text-slate-600 group-hover:text-emerald-700 transition-colors">Resolved</span>
             <div className="p-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-200">
               <CheckCircle2 className="w-3.5 h-3.5" />
             </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTickets } from '../../hooks/useTickets';
 import { useAuth } from '../../hooks/useAuth';
@@ -20,7 +20,7 @@ import {
 
 export const TeamLeadDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { tickets, selectedTicket, setSelectedTicket } = useTickets();
+  const { tickets, selectedTicket, setSelectedTicket, isLoading, error } = useTickets();
   const { users } = useAuth();
 
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
@@ -28,58 +28,91 @@ export const TeamLeadDashboard: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'>('All');
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
-  };
+  }, []);
 
   // Helper functions for ticket states
-  const isTicketUnassigned = (t: Ticket) =>
-    !t.assignedAgent ||
-    t.assignedAgent.trim() === '' ||
-    t.assignedAgent.toLowerCase() === 'unassigned' ||
-    t.assignedToType === 'unassigned';
+  // Unassigned = still active AND has no valid assigned agent. This matches the
+  // Admin and Employee portals so all three agree on the same count. We rely on
+  // assignedAgent (the concrete assignment) rather than the assignedToType
+  // field, which is not always kept in sync when an agent is assigned.
+  const isTicketUnassigned = useCallback(
+    (t: Ticket) =>
+      t.status !== 'Resolved' &&
+      t.status !== 'Closed' &&
+      (typeof t.isUnassigned === 'boolean'
+        ? t.isUnassigned
+        : !t.assignedAgent ||
+          t.assignedAgent.trim() === '' ||
+          t.assignedAgent.toLowerCase() === 'unassigned'),
+    [],
+  );
 
-  const isTicketSLARisk = (t: Ticket) => {
-    const s = (t.slaStatus || '').toLowerCase();
-    return s.includes('risk') || s.includes('breach') || s.includes('approach');
-  };
+  // Server-computed SLA status: only "At Risk" is risk; breached is separate.
+  const isTicketSLARisk = useCallback((t: Ticket) => t.slaStatus === 'At Risk', []);
 
-  // 1. Calculate Summary Card Metrics
+  // 1. Calculate Summary Card Metrics. Memoised so the counters are not
+  // recomputed on every unrelated re-render of the dashboard.
   const totalTickets = tickets.length;
-  const unassignedCount = tickets.filter(isTicketUnassigned).length;
-  const inProgressCount = tickets.filter((t) => t.status === 'In Progress').length;
-  const slaRiskCount = tickets.filter(isTicketSLARisk).length;
+  const unassignedCount = useMemo(
+    () => tickets.filter(isTicketUnassigned).length,
+    [tickets, isTicketUnassigned],
+  );
+  const inProgressCount = useMemo(
+    () => tickets.filter((t) => t.status === 'In Progress').length,
+    [tickets],
+  );
+  const slaRiskCount = useMemo(
+    () => tickets.filter(isTicketSLARisk).length,
+    [tickets, isTicketSLARisk],
+  );
 
   // 2. Prepare Team Members (Strictly employees, never admins or team leads)
-  const employeeUsers = users.filter((u) => u.role === 'employee');
-  const displayEmployees = employeeUsers.slice(0, 4);
+  const employeeUsers = useMemo(() => users.filter((u) => u.role === 'employee'), [users]);
+  const displayEmployees = useMemo(() => employeeUsers.slice(0, 4), [employeeUsers]);
 
-  // Helper to count active tickets for a user
-  const getEmployeeActiveTicketCount = (empId: string, empName: string) => {
-    return tickets.filter(
-      (t) =>
-        (t.employeeId === empId ||
-          t.employee === empName ||
-          t.assignedAgentId === empId ||
-          t.assignedAgent === empName) &&
-        t.status !== 'Resolved' &&
-        t.status !== 'Closed'
-    ).length;
-  };
+  // Helper to count active tickets for a user. The counts are computed once
+  // per ticket change instead of on every render of the dashboard.
+  const employeeTicketCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const emp of displayEmployees) {
+      const count = tickets.filter(
+        (t) =>
+          (t.employeeId === emp.id ||
+            t.employee === emp.name ||
+            t.assignedAgentId === emp.id ||
+            t.assignedAgent === emp.name) &&
+          t.status !== 'Resolved' &&
+          t.status !== 'Closed'
+      ).length;
+      counts.set(emp.id, count);
+    }
+    return counts;
+  }, [tickets, displayEmployees]);
+
+  const getEmployeeActiveTicketCount = useCallback(
+    (empId: string) => employeeTicketCounts.get(empId) || 0,
+    [employeeTicketCounts],
+  );
 
   // 3. Tickets Needing Attention (Critical, High priority, SLA risk, Escalated, Pending)
-  const ticketsNeedingAttention = tickets
-    .filter(
-      (t) =>
-        t.priority === 'Critical' ||
-        t.priority === 'High' ||
-        t.status === 'Escalated' ||
-        t.slaStatus === 'At Risk' ||
-        t.slaStatus === 'Breached' ||
-        t.status === 'Pending'
-    )
-    .slice(0, 5);
+  const ticketsNeedingAttention = useMemo(
+    () =>
+      tickets
+        .filter(
+          (t) =>
+            t.priority === 'Critical' ||
+            t.priority === 'High' ||
+            t.status === 'Escalated' ||
+            t.slaStatus === 'At Risk' ||
+            t.slaStatus === 'Breached' ||
+            t.status === 'Pending'
+        )
+        .slice(0, 5),
+    [tickets],
+  );
 
   // 4. Quick Filter Toolbar Pills and Filtered Recent Tickets
   const quickFilterPills: Array<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'> = [
@@ -90,31 +123,39 @@ export const TeamLeadDashboard: React.FC = () => {
     'Escalated'
   ];
 
-  const getQuickFilterCount = (filter: 'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated') => {
-    switch (filter) {
-      case 'All':
-        return tickets.length;
-      case 'Unassigned':
-        return tickets.filter(isTicketUnassigned).length;
-      case 'In Progress':
-        return tickets.filter((t) => t.status === 'In Progress').length;
-      case 'SLA Risk':
-        return tickets.filter(isTicketSLARisk).length;
-      case 'Escalated':
-        return tickets.filter((t) => t.status === 'Escalated').length;
-    }
-  };
+  const quickFilterCounts = useMemo(
+    () => ({
+      All: tickets.length,
+      Unassigned: unassignedCount,
+      'In Progress': inProgressCount,
+      'SLA Risk': slaRiskCount,
+      Escalated: tickets.filter((t) => t.status === 'Escalated').length,
+    }),
+    [tickets, unassignedCount, inProgressCount, slaRiskCount],
+  );
 
-  const filteredRecentTickets = [...tickets]
-    .filter((t) => {
-      if (dashboardFilter === 'Unassigned') return isTicketUnassigned(t);
-      if (dashboardFilter === 'In Progress') return t.status === 'In Progress';
-      if (dashboardFilter === 'SLA Risk') return isTicketSLARisk(t);
-      if (dashboardFilter === 'Escalated') return t.status === 'Escalated';
-      return true;
-    })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
+  const getQuickFilterCount = useCallback(
+    (filter: 'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'): number | string => {
+      if (error) return '—';
+      return quickFilterCounts[filter];
+    },
+    [error, quickFilterCounts],
+  );
+
+  const filteredRecentTickets = useMemo(
+    () =>
+      [...tickets]
+        .filter((t) => {
+          if (dashboardFilter === 'Unassigned') return isTicketUnassigned(t);
+          if (dashboardFilter === 'In Progress') return t.status === 'In Progress';
+          if (dashboardFilter === 'SLA Risk') return isTicketSLARisk(t);
+          if (dashboardFilter === 'Escalated') return t.status === 'Escalated';
+          return true;
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5),
+    [tickets, dashboardFilter, isTicketUnassigned, isTicketSLARisk],
+  );
 
   // Priority Badge Renderer
   const renderPriorityBadge = (priority: TicketPriority) => {
@@ -198,6 +239,13 @@ export const TeamLeadDashboard: React.FC = () => {
         </div>
       )}
 
+      {error && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-medium flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Could not load live ticket data: {error}
+        </div>
+      )}
+
       {/* Header Banner - Matching Admin Dashboard */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-5 py-4 rounded-xl border border-slate-200 shadow-xs">
         <div>
@@ -205,7 +253,7 @@ export const TeamLeadDashboard: React.FC = () => {
             Team Lead Dashboard
           </h1>
           <p className="text-[13px] text-slate-500 mt-0.5">
-            Quick overview of department tickets and team activity
+            {isLoading ? 'Loading live ticket data…' : 'Quick overview of department tickets and team activity'}
           </p>
         </div>
 
@@ -247,7 +295,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-[#0284C7] transition-colors">
-              {totalTickets}
+              {error ? '—' : totalTickets}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Department total</span>
@@ -271,7 +319,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-sky-600 transition-colors">
-              {unassignedCount}
+              {error ? '—' : unassignedCount}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Pending assignment</span>
@@ -295,7 +343,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">
-              {inProgressCount}
+              {error ? '—' : inProgressCount}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Active queue</span>
@@ -319,7 +367,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-rose-600 leading-tight">
-              {slaRiskCount}
+              {error ? '—' : slaRiskCount}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Approaching SLA</span>
@@ -350,8 +398,8 @@ export const TeamLeadDashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {displayEmployees.map((emp, index) => {
-              const ticketCount = getEmployeeActiveTicketCount(emp.id, emp.name);
-              const isBusy = index === 2 || ticketCount >= 4;
+              const ticketCount = getEmployeeActiveTicketCount(emp.id);
+              const isBusy = ticketCount >= 4;
               const firstName = emp.name.split(' ')[0];
 
               return (

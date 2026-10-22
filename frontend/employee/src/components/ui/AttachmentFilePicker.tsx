@@ -39,13 +39,17 @@ export const AttachmentFilePicker: React.FC<AttachmentFilePickerProps> = ({
     const selected = e.target.files;
     if (!selected || selected.length === 0) return;
 
-    const newFiles: AttachedFile[] = Array.from(selected).map((f) => ({
-      id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      name: f.name,
-      size: formatFileSize(f.size),
-      type: f.type || 'Document',
-      file: f,
-    }));
+    const existingKeys = new Set(files.map((f) => `${f.name.toLowerCase()}_${f.size}`));
+
+    const newFiles: AttachedFile[] = Array.from(selected)
+      .map((f) => ({
+        id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        name: f.name,
+        size: formatFileSize(f.size),
+        type: f.type || 'Document',
+        file: f,
+      }))
+      .filter((f) => !existingKeys.has(`${f.name.toLowerCase()}_${f.size}`));
 
     onFilesChange([...files, ...newFiles]);
 

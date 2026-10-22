@@ -11,6 +11,7 @@ import {
   User as UserIcon
 } from 'lucide-react';
 import { EmployeeService } from '../../services/employeeService';
+import { clearBackendSession } from '../../services/backendAuth';
 import type { EmployeeProfile, EmployeeNotificationItem } from '../../types';
 
 interface EmployeeTopNavProps {
@@ -226,6 +227,8 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
               <button
                 onClick={() => {
                   setShowProfileMenu(false);
+                  EmployeeService.clearCache();
+                  clearBackendSession();
                   localStorage.removeItem('platform_current_user');
                   localStorage.setItem('platform_explicitly_logged_out', 'true');
                   navigate('/signin');

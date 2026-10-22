@@ -8,7 +8,7 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import type { Ticket } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { Search, RefreshCw, Eye } from 'lucide-react';
+import { Search, RefreshCw, Eye, CheckCircle } from 'lucide-react';
 
 export const AllTicketsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,6 +20,9 @@ export const AllTicketsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
 
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const fetchTickets = async () => {
     setIsLoading(true);
     const data = await AdminApiService.getTickets('all');
@@ -30,6 +33,13 @@ export const AllTicketsPage: React.FC = () => {
   useEffect(() => {
     fetchTickets();
   }, []);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   useEffect(() => {
     let result = tickets;
@@ -45,7 +55,13 @@ export const AllTicketsPage: React.FC = () => {
     }
 
     if (departmentFilter !== 'all') {
-      result = result.filter(t => t.department.toLowerCase() === departmentFilter.toLowerCase());
+      const targetDept = departmentFilter.toLowerCase();
+      result = result.filter(t => {
+        if (!t.department) return false;
+        const deptStr = String(t.department).toLowerCase();
+        const parts = deptStr.split(/[,/&]+/).map(p => p.trim());
+        return parts.some(p => p.includes(targetDept) || targetDept.includes(p)) || deptStr.includes(targetDept);
+      });
     }
 
     if (statusFilter !== 'all') {
@@ -125,20 +141,39 @@ export const AllTicketsPage: React.FC = () => {
     {
       header: 'Actions',
       cell: (row) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<Eye className="w-3.5 h-3.5" />}
-          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=all-tickets`)}
-        >
-          View
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Eye className="w-3.5 h-3.5" />}
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=all-tickets`)}
+            title="View Details"
+          >
+            View Ticket
+          </Button>
+        </div>
       )
     }
   ];
 
   return (
     <div className="space-y-6">
+      {/* Toast notification */}
+      {toastMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center justify-between text-xs font-semibold shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="text-emerald-600 hover:text-emerald-900 font-bold ml-4 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -227,5 +262,3 @@ export const AllTicketsPage: React.FC = () => {
     </div>
   );
 };
-
-

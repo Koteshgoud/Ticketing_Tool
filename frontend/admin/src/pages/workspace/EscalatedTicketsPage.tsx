@@ -31,13 +31,20 @@ export const EscalatedTicketsPage: React.FC = () => {
       AdminApiService.getTickets('escalated'),
       AdminApiService.getUsers()
     ]);
-    setTickets(ticketData);
+    const uniqueTickets = Array.from(new Map(ticketData.map(t => [t.id, t])).values());
+    setTickets(uniqueTickets);
     setUsers(userData);
     setIsLoading(false);
   };
 
   useEffect(() => {
     loadData();
+    window.addEventListener('ticket-updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('ticket-updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, []);
 
   const handleOpenModal = (ticket: Ticket) => {

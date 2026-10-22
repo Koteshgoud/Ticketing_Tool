@@ -13,7 +13,9 @@ import {
   Edit3,
   Trash2,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Mail,
+  Clock
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -148,6 +150,20 @@ export const UserManagementPage: React.FC = () => {
     }
   };
 
+  const handleResendInvite = async (user: User) => {
+    try {
+      const res = await AdminApiService.resendInvite(user);
+      if (res && (res.status === 'success' || res.success)) {
+        setToastMessage({ text: `Invitation re-sent successfully to ${user.email}!`, type: 'success' });
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'Pending Invitation' } : u));
+      } else {
+        setToastMessage({ text: res?.message || 'Could not send invite. Verify SMTP notification settings.', type: 'error' });
+      }
+    } catch (e: any) {
+      setToastMessage({ text: 'Unable to deliver invitation email. Please verify SMTP setup.', type: 'error' });
+    }
+  };
+
   const columns: Column<User>[] = [
     {
       header: 'USER & EMAIL',
@@ -198,9 +214,25 @@ export const UserManagementPage: React.FC = () => {
         }
         if (row.status === 'Pending Invitation') {
           return (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200" title="Invitation sent, awaiting activation">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
               Pending Invitation
+            </span>
+          );
+        }
+        if (row.status === 'Invite Expired') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200" title="Invitation link expired after 7 days">
+              <Clock className="w-3 h-3 text-orange-500" />
+              Invite Expired
+            </span>
+          );
+        }
+        if (row.status === 'Invite Failed') {
+          return (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200" title="Invitation email delivery failed">
+              <AlertCircle className="w-3 h-3 text-rose-500" />
+              Invite Failed
             </span>
           );
         }
@@ -221,11 +253,22 @@ export const UserManagementPage: React.FC = () => {
     {
       header: 'ACTIONS',
       cell: (row) => (
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {['Pending Invitation', 'Invite Expired', 'Invite Failed'].includes(row.status) && (
+            <button
+              type="button"
+              onClick={() => handleResendInvite(row)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#0284C7] hover:text-[#0369a1] cursor-pointer transition-colors"
+              title="Resend invitation email"
+            >
+              <Mail className="w-3.5 h-3.5 text-[#0284C7]" />
+              Resend
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleOpenEdit(row)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer transition-colors"
           >
             <Edit3 className="w-3.5 h-3.5 text-slate-500" />
             Edit
@@ -233,7 +276,7 @@ export const UserManagementPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setDeletingUser(row)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 hover:text-rose-700 cursor-pointer transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:text-rose-700 cursor-pointer transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5 text-rose-500" />
             Delete

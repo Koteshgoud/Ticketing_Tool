@@ -3,8 +3,7 @@
  * Supports role-based filtering, employee search by Name/ID, and relationship mappings.
  * Strictly dynamically populated from Database; zero mock data.
  */
-
-import { supabase } from './supabaseClient';
+import { apiRequestSafe } from './backendAuth';
 
 export interface DepartmentItem {
   id: string;
@@ -45,6 +44,22 @@ export const TEAM_LEADS: TeamLeadItem[] = [];
 
 export const EMPLOYEES: EmployeeItem[] = [];
 
+const _leadEmployeesCache = new Map<string, EmployeeItem[]>();
+
+/**
+ * Directory sync state. The Team Lead portal reads the same directory from
+ * several places (lead picker, admin picker, employee tagging). Without this
+ * guard every render of the picker re-issued the request, which turned the
+ * create-ticket form into a request storm while typing.
+ */
+const _SYNC_TTL_MS = 10_000;
+let _syncInflight: Promise<void> | null = null;
+let _lastSyncAt = 0;
+
+const _ADMIN_TTL_MS = 30_000;
+let _adminInflight: Promise<any[]> | null = null;
+let _adminCache: { at: number; data: any[] } | null = null;
+
 export const OrganizationService = {
   getDepartments(): DepartmentItem[] {
     return DEPARTMENTS;
@@ -57,21 +72,50 @@ export const OrganizationService = {
     );
   },
 
-  getEmployeesByTeamLead(teamLeadId: string): EmployeeItem[] {
-    const lead = this.getTeamLeadById(teamLeadId);
-    const byDirectId = EMPLOYEES.filter((emp) => emp.teamLeadId && emp.teamLeadId === teamLeadId);
-    if (byDirectId.length > 0) return byDirectId;
-
-    if (lead) {
-      const leadDept = (lead.departmentName || '').toLowerCase();
-      const byDept = EMPLOYEES.filter((emp) => {
-        const empDept = (emp.departmentName || '').toLowerCase();
-        return empDept === leadDept || (empDept.includes('it') && leadDept.includes('it'));
+  async fetchEmployeesByTeamLead(teamLeadId: string): Promise<EmployeeItem[]> {
+    if (!teamLeadId) return [];
+    try {
+      const res = await apiRequestSafe<any[]>(`/team-leads/${encodeURIComponent(teamLeadId)}/employees`);
+      if (res.error) {
+        throw new Error(res.error);
+      }
+      const raw = Array.isArray(res.data) ? res.data : [];
+      const lead = this.getTeamLeadById(teamLeadId);
+      const items: EmployeeItem[] = raw.map((u) => {
+        const rawDept = u.department || lead?.departmentName || 'IT Support';
+        const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === rawDept.toLowerCase()) || DEPARTMENTS[0];
+        return {
+          id: u.id,
+          employeeId: u.id,
+          name: u.name,
+          role: u.designation || 'Team Member',
+          teamLeadId: teamLeadId,
+          departmentId: deptObj.id,
+          departmentName: rawDept,
+          email: u.email,
+        };
       });
-      if (byDept.length > 0) return byDept;
-    }
+      _leadEmployeesCache.set(teamLeadId, items);
 
-    return EMPLOYEES;
+      for (const item of items) {
+        const idx = EMPLOYEES.findIndex(e => e.id === item.id);
+        if (idx >= 0) EMPLOYEES[idx] = item;
+        else EMPLOYEES.push(item);
+      }
+
+      return items;
+    } catch (e: any) {
+      console.error(`Failed to fetch employees for team lead ${teamLeadId}:`, e);
+      throw e;
+    }
+  },
+
+  getEmployeesByTeamLead(teamLeadId: string): EmployeeItem[] {
+    if (!teamLeadId) return [];
+    if (_leadEmployeesCache.has(teamLeadId)) {
+      return _leadEmployeesCache.get(teamLeadId)!;
+    }
+    return EMPLOYEES.filter((emp) => emp.teamLeadId && emp.teamLeadId === teamLeadId);
   },
 
   searchEmployees(teamLeadId: string, query: string): EmployeeItem[] {
@@ -90,7 +134,15 @@ export const OrganizationService = {
   },
 
   getEmployeeById(id: string): EmployeeItem | undefined {
-    return EMPLOYEES.find((emp) => emp.id === id || emp.employeeId === id);
+    const direct = EMPLOYEES.find((emp) => emp.id === id || emp.employeeId === id);
+    if (direct) return direct;
+    // Employees fetched for a specific Team Lead are cached separately; look
+    // them up there too so tagging survives a later directory sync.
+    for (const list of _leadEmployeesCache.values()) {
+      const found = list.find((emp) => emp.id === id || emp.employeeId === id);
+      if (found) return found;
+    }
+    return undefined;
   },
 
   searchTeamLeads(deptName: string, query: string): TeamLeadItem[] {
@@ -156,66 +208,115 @@ export const OrganizationService = {
     return EMPLOYEES;
   },
 
-  async syncFromDatabase(): Promise<void> {
-    try {
-      const { data: dbUsers, error } = await supabase
-        .from('users')
-        .select('*');
+  /**
+   * Load the authenticated directory into TEAM_LEADS/EMPLOYEES.
+   *
+   * The request is de-duplicated and cached for a short window: the picker
+   * mounts in several places and must not re-fetch the directory on every
+   * render (which previously re-ran on each keystroke in the create form).
+   */
+  async syncFromDatabase(options: { force?: boolean } = {}): Promise<void> {
+    const force = options.force === true;
+    if (!force && _syncInflight) return _syncInflight;
+    if (
+      !force &&
+      _lastSyncAt > 0 &&
+      Date.now() - _lastSyncAt < _SYNC_TTL_MS &&
+      TEAM_LEADS.length + EMPLOYEES.length > 0
+    ) {
+      return;
+    }
 
-      if (error || !dbUsers) return;
+    _syncInflight = (async () => {
+      try {
+        const res = await apiRequestSafe<any[]>('/users/directory');
+        if (res.error || !Array.isArray(res.data)) return;
+        const dbUsers = res.data;
 
-      TEAM_LEADS.length = 0;
-      EMPLOYEES.length = 0;
+        TEAM_LEADS.length = 0;
+        EMPLOYEES.length = 0;
 
-      for (const u of dbUsers) {
-        const roleLower = (u.role || '').toLowerCase();
-        const rawDept = u.department || 'IT Support';
-        let deptName = rawDept;
-        if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
-        else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-        else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
-        else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
-        else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
+        for (const u of dbUsers) {
+          const roleLower = (u.role || '').toLowerCase();
+          const rawDept = u.department || 'IT Support';
+          let deptName = rawDept;
+          if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
+          else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
+          else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
+          else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
+          else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
 
-        const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
+          const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
 
-        if (roleLower === 'teamlead' || roleLower === 'team lead') {
-          const leadItem: TeamLeadItem = {
-            id: u.id,
-            employeeId: u.id,
-            name: u.name,
-            role: `${deptName} Team Lead`,
-            departmentId: deptObj.id,
-            departmentName: deptName,
-            email: u.email,
-          };
-          const existingIdx = TEAM_LEADS.findIndex(t => t.id === u.id || t.email === u.email);
-          if (existingIdx >= 0) {
-            TEAM_LEADS[existingIdx] = leadItem;
-          } else {
-            TEAM_LEADS.push(leadItem);
-          }
-        } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
-          const empItem: EmployeeItem = {
-            id: u.id,
-            employeeId: u.id,
-            name: u.name,
-            role: u.designation || 'Support Specialist',
-            teamLeadId: u.team_lead_id || u.team_lead || '',
-            departmentId: deptObj.id,
-            departmentName: deptName,
-            email: u.email,
-          };
-          const existingIdx = EMPLOYEES.findIndex(e => e.id === u.id || e.email === u.email);
-          if (existingIdx >= 0) {
-            EMPLOYEES[existingIdx] = empItem;
-          } else {
-            EMPLOYEES.push(empItem);
+          if (roleLower === 'teamlead' || roleLower === 'team lead') {
+            const leadItem: TeamLeadItem = {
+              id: u.id,
+              employeeId: u.id,
+              name: u.name,
+              role: `${deptName} Team Lead`,
+              departmentId: deptObj.id,
+              departmentName: deptName,
+              email: u.email,
+            };
+            const existingIdx = TEAM_LEADS.findIndex(t => t.id === u.id || t.email === u.email);
+            if (existingIdx >= 0) {
+              TEAM_LEADS[existingIdx] = leadItem;
+            } else {
+              TEAM_LEADS.push(leadItem);
+            }
+          } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
+            const empItem: EmployeeItem = {
+              id: u.id,
+              employeeId: u.id,
+              name: u.name,
+              role: u.designation || 'Support Specialist',
+              teamLeadId: u.team_lead_id || u.team_lead || '',
+              departmentId: deptObj.id,
+              departmentName: deptName,
+              email: u.email,
+            };
+            const existingIdx = EMPLOYEES.findIndex(e => e.id === u.id || e.email === u.email);
+            if (existingIdx >= 0) {
+              EMPLOYEES[existingIdx] = empItem;
+            } else {
+              EMPLOYEES.push(empItem);
+            }
           }
         }
+      } catch (e) {
+        console.warn('OrganizationService: syncFromDatabase error', e);
+      } finally {
+        _lastSyncAt = Date.now();
       }
-    } catch (e) {
-      console.warn('OrganizationService: syncFromDatabase error', e);
+    })();
+
+    try {
+      await _syncInflight;
+    } finally {
+      _syncInflight = null;
     }
+  },
+
+  /**
+   * Administrators for the "request admin assistance" picker. Admins sit
+   * outside a Team Lead's own team, so they are read from the authenticated
+   * directory endpoint and cached briefly.
+   */
+  async fetchAdmins(): Promise<any[]> {
+    if (_adminCache && Date.now() - _adminCache.at < _ADMIN_TTL_MS) {
+      return _adminCache.data;
+    }
+    if (!_adminInflight) {
+      _adminInflight = apiRequestSafe<any[]>('/users/directory?role=admin')
+        .then((res) => {
+          const data = res.error || !Array.isArray(res.data) ? [] : res.data;
+          _adminCache = { at: Date.now(), data };
+          return data;
+        })
+        .finally(() => {
+          _adminInflight = null;
+        });
+    }
+    return _adminInflight;
   },
 };

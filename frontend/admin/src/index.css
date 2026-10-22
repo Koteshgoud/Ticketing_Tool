@@ -43,3 +43,21 @@
   background: #94A3B8;
 }
 
+/* Remove duplicate browser-native password reveal icons in Edge, IE, Chrome */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+  height: 0;
+  width: 0;
+  margin: 0;
+}
+

@@ -7,6 +7,8 @@ import {
   Users,
   ShieldCheck,
   BadgeCheck,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import {
   OrganizationService,
@@ -42,12 +44,41 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
   className = '',
 }) => {
   const [, setDbVersion] = useState(0);
+  const [loadingByLead, setLoadingByLead] = useState<Record<string, boolean>>({});
+  const [errorByLead, setErrorByLead] = useState<Record<string, string | null>>({});
+  const [employeesByLead, setEmployeesByLead] = useState<Record<string, EmployeeItem[]>>({});
 
   useEffect(() => {
     OrganizationService.syncFromDatabase().then(() => {
       setDbVersion((v) => v + 1);
     });
   }, []);
+
+  const loadEmployeesForLead = async (leadId: string) => {
+    setLoadingByLead((prev) => ({ ...prev, [leadId]: true }));
+    setErrorByLead((prev) => ({ ...prev, [leadId]: null }));
+    try {
+      const emps = await OrganizationService.fetchEmployeesByTeamLead(leadId);
+      setEmployeesByLead((prev) => ({ ...prev, [leadId]: emps }));
+    } catch {
+      setErrorByLead((prev) => ({
+        ...prev,
+        [leadId]: 'Failed to load employees for this Team Lead. Please retry.',
+      }));
+      setEmployeesByLead((prev) => ({ ...prev, [leadId]: [] }));
+    } finally {
+      setLoadingByLead((prev) => ({ ...prev, [leadId]: false }));
+    }
+  };
+
+  // Ensure employees are fetched whenever a selected Team Lead changes
+  useEffect(() => {
+    selectedTeamLeadIds.forEach((leadId) => {
+      if (!employeesByLead[leadId] && !loadingByLead[leadId]) {
+        void loadEmployeesForLead(leadId);
+      }
+    });
+  }, [selectedTeamLeadIds]);
 
   // Search state stored per Team Lead ID to allow independent search fields
   const [searchQueries, setSearchQueries] = useState<Record<string, string>>({});
@@ -81,7 +112,7 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
     if (selectedTeamLeadIds.includes(lead.id)) {
       updatedIds = selectedTeamLeadIds.filter((id) => id !== lead.id);
       // Remove any employees belonging to this deselected Team Lead
-      const teamEmployees = OrganizationService.getEmployeesByTeamLead(lead.id);
+      const teamEmployees = employeesByLead[lead.id] || [];
       const teamEmpIds = new Set(teamEmployees.map((e) => e.id));
       const updatedEmpIds = selectedEmployeeIds.filter((id) => !teamEmpIds.has(id));
       const updatedEmpObjs = updatedEmpIds
@@ -90,6 +121,9 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
       onSelectedEmployeesChange(updatedEmpIds, updatedEmpObjs);
     } else {
       updatedIds = [...selectedTeamLeadIds, lead.id];
+      // Immediately clear previously selected employees on Team Lead change
+      onSelectedEmployeesChange([], []);
+      void loadEmployeesForLead(lead.id);
     }
 
     const updatedLeadObjs = updatedIds
@@ -198,70 +232,69 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                   )
                 : availableLeads;
 
-          const tlQuery = (teamLeadSearchQueries[deptName] || '').trim().toLowerCase();
-          const filteredLeads = leadsToDisplay.filter((lead) => {
-            if (!tlQuery) return true;
+            const tlQuery = (teamLeadSearchQueries[deptName] || '').trim().toLowerCase();
+            const filteredLeads = leadsToDisplay.filter((lead) => {
+              if (!tlQuery) return true;
+              return (
+                lead.name.toLowerCase().includes(tlQuery) ||
+                lead.employeeId.toLowerCase().includes(tlQuery)
+              );
+            });
+
             return (
-              lead.name.toLowerCase().includes(tlQuery) ||
-              lead.employeeId.toLowerCase().includes(tlQuery)
-            );
-          });
-
-          return (
-            <div
-              key={deptName}
-              className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs space-y-3"
-            >
-              {/* Department Section Header */}
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-xs font-bold text-slate-900 tracking-wide flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-[#0284C7]" />
-                  {deptName} Team Leads
-                </span>
-                <span className="text-[10.5px] font-medium text-slate-400">
-                  {leadsToDisplay.length} Available Lead{leadsToDisplay.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-
-              {/* 1. TEAM LEAD SEARCH */}
-              {role !== 'teamlead' && (
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={teamLeadSearchQueries[deptName] || ''}
-                    onChange={(e) => handleTeamLeadSearchChange(deptName, e.target.value)}
-                    placeholder="Search Team Lead by name or Employee ID"
-                    className="w-full pl-8 pr-7 py-1.5 bg-slate-50/80 border border-slate-200 rounded-lg text-xs placeholder:text-slate-400 text-slate-800 focus:outline-none focus:border-[#0284C7] focus:bg-white focus:ring-1 focus:ring-[#0284C7]/20 transition-all"
-                  />
-                  {teamLeadSearchQueries[deptName] && (
-                    <button
-                      type="button"
-                      onClick={() => handleTeamLeadSearchChange(deptName, '')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
+              <div
+                key={deptName}
+                className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs space-y-3"
+              >
+                {/* Department Section Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-xs font-bold text-slate-900 tracking-wide flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#0284C7]" />
+                    {deptName} Team Leads
+                  </span>
+                  <span className="text-[10.5px] font-medium text-slate-400">
+                    {leadsToDisplay.length} Available Lead{leadsToDisplay.length !== 1 ? 's' : ''}
+                  </span>
                 </div>
-              )}
 
-              {filteredLeads.length === 0 ? (
-                <div className="text-xs text-slate-500 italic py-2 text-center bg-slate-50/80 rounded-lg border border-slate-200/60">
-                  No Team Leads found.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* 3. TEAM LEAD SELECTION */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {filteredLeads.map((lead) => {
+                {/* 1. TEAM LEAD SEARCH */}
+                {role !== 'teamlead' && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={teamLeadSearchQueries[deptName] || ''}
+                      onChange={(e) => handleTeamLeadSearchChange(deptName, e.target.value)}
+                      placeholder="Search Team Lead by name or Employee ID"
+                      className="w-full pl-8 pr-7 py-1.5 bg-slate-50/80 border border-slate-200 rounded-lg text-xs placeholder:text-slate-400 text-slate-800 focus:outline-none focus:border-[#0284C7] focus:bg-white focus:ring-1 focus:ring-[#0284C7]/20 transition-all"
+                    />
+                    {teamLeadSearchQueries[deptName] && (
+                      <button
+                        type="button"
+                        onClick={() => handleTeamLeadSearchChange(deptName, '')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {filteredLeads.length === 0 ? (
+                  <div className="text-xs text-slate-500 italic py-2 text-center bg-slate-50/80 rounded-lg border border-slate-200/60">
+                    No Team Leads found.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* 3. TEAM LEAD SELECTION */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {filteredLeads.map((lead) => {
                         const isSelected = selectedTeamLeadIds.includes(lead.id);
 
                         return (
                           <div
                             key={lead.id}
                             onClick={() => {
-                              // If teamlead role, it is locked to own identity
                               if (role !== 'teamlead') {
                                 handleToggleLead(lead);
                               }
@@ -310,11 +343,17 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                     {leadsToDisplay
                       .filter((lead) => selectedTeamLeadIds.includes(lead.id))
                       .map((lead) => {
-                        const searchQuery = searchQueries[lead.id] || '';
-                        const filteredEmployees = OrganizationService.searchEmployees(
-                          lead.id,
-                          searchQuery
-                        );
+                        const isLoading = !!loadingByLead[lead.id];
+                        const errorMsg = errorByLead[lead.id];
+                        const teamEmps = employeesByLead[lead.id] || [];
+                        const searchQuery = (searchQueries[lead.id] || '').trim().toLowerCase();
+                        const filteredEmployees = teamEmps.filter((emp) => {
+                          if (!searchQuery) return true;
+                          return (
+                            emp.name.toLowerCase().includes(searchQuery) ||
+                            emp.employeeId.toLowerCase().includes(searchQuery)
+                          );
+                        });
 
                         return (
                           <div
@@ -332,7 +371,7 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                                   </span>
                                 </div>
                                 <div className="text-[11px] text-slate-500 font-medium">
-                                  Team Members ({filteredEmployees.length})
+                                  Team Members ({teamEmps.length})
                                 </div>
                               </div>
 
@@ -341,14 +380,15 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 <input
                                   type="text"
-                                  value={searchQuery}
+                                  value={searchQueries[lead.id] || ''}
                                   onChange={(e) =>
                                     handleSearchChange(lead.id, e.target.value)
                                   }
+                                  disabled={isLoading || !!errorMsg}
                                   placeholder="Search employee by name or Employee ID"
-                                  className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs placeholder:text-slate-400 text-slate-800 focus:outline-none focus:border-[#0284C7] focus:ring-1 focus:ring-[#0284C7]/20 transition-all"
+                                  className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs placeholder:text-slate-400 text-slate-800 focus:outline-none focus:border-[#0284C7] focus:ring-1 focus:ring-[#0284C7]/20 transition-all disabled:opacity-50"
                                 />
-                                {searchQuery && (
+                                {searchQueries[lead.id] && (
                                   <button
                                     type="button"
                                     onClick={() => handleSearchChange(lead.id, '')}
@@ -360,9 +400,32 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                               </div>
                             </div>
 
-                            {/* Employees Grid */}
-                            {filteredEmployees.length === 0 ? (
-                              <div className="text-xs text-slate-500 italic py-2 text-center bg-white/70 rounded-lg border border-slate-200/60">
+                            {/* Employees States */}
+                            {isLoading ? (
+                              <div className="flex items-center justify-center py-6 text-xs text-slate-500 gap-2 bg-white/70 rounded-lg border border-slate-200/60">
+                                <Loader2 className="w-4 h-4 animate-spin text-[#0284C7]" />
+                                <span>Loading employees for {lead.name}...</span>
+                              </div>
+                            ) : errorMsg ? (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                                  <span>{errorMsg}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => loadEmployeesForLead(lead.id)}
+                                  className="text-xs font-bold text-red-700 underline hover:text-red-900 cursor-pointer"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            ) : teamEmps.length === 0 ? (
+                              <div className="text-xs text-slate-500 italic py-3 text-center bg-white/70 rounded-lg border border-slate-200/60">
+                                No employees assigned to this Team Lead.
+                              </div>
+                            ) : filteredEmployees.length === 0 ? (
+                              <div className="text-xs text-slate-500 italic py-3 text-center bg-white/70 rounded-lg border border-slate-200/60">
                                 No employees found.
                               </div>
                             ) : (
@@ -381,7 +444,6 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
                                       }`}
                                     >
                                       <div className="min-w-0 flex items-center gap-2">
-                                        {/* Checkbox */}
                                         <div
                                           className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${
                                             isEmpSelected

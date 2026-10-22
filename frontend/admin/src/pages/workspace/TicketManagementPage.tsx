@@ -4,7 +4,8 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import type { Ticket, TicketPriority, TicketStatus } from '../../types';
-import { AdminApiService } from '../../services/api';
+import { AdminApiService, BACKEND_API_URL } from '../../services/api';
+import { authenticatedFetch, ensureBackendSession, withAccessToken } from '../../services/backendAuth';
 import {
   Search,
   RefreshCw,
@@ -15,7 +16,9 @@ import {
   X,
   Paperclip,
   Inbox,
-  Hourglass
+  Hourglass,
+  Eye,
+  Download
 } from 'lucide-react';
 
 export const TicketManagementPage: React.FC = () => {
@@ -53,6 +56,12 @@ export const TicketManagementPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    window.addEventListener('ticket-updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('ticket-updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, []);
 
   const isTicketUnassigned = (t: Ticket) =>
@@ -63,10 +72,10 @@ export const TicketManagementPage: React.FC = () => {
   // Filter logic
   const filteredTickets = tickets.filter((t) => {
     // Queue Tabs filter
-    if (activeQueueTab === 'unassigned' && (!isTicketUnassigned(t) || t.status === 'Resolved' || t.status === 'Closed')) return false;
-    if (activeQueueTab === 'in_progress' && t.status !== 'In Progress') return false;
-    if (activeQueueTab === 'pending' && t.status !== 'Pending') return false;
-    if (activeQueueTab === 'escalated' && t.status !== 'Escalated') return false;
+    if (activeQueueTab === 'unassigned' && (!isTicketUnassigned(t) || ['resolved', 'closed'].includes((t.status || '').toLowerCase()))) return false;
+    if (activeQueueTab === 'in_progress' && (t.status || '').toLowerCase() !== 'in progress') return false;
+    if (activeQueueTab === 'pending' && (t.status || '').toLowerCase() !== 'pending') return false;
+    if (activeQueueTab === 'escalated' && ((t.status || '').toLowerCase() !== 'escalated' || ['resolved', 'closed'].includes((t.status || '').toLowerCase()))) return false;
 
     // Compact filters
     const matchesSearch =
@@ -90,10 +99,10 @@ export const TicketManagementPage: React.FC = () => {
   });
 
   // Count stats
-  const countUnassigned = tickets.filter((t) => isTicketUnassigned(t) && t.status !== 'Closed' && t.status !== 'Resolved').length;
-  const countInProgress = tickets.filter((t) => t.status === 'In Progress').length;
-  const countPending = tickets.filter((t) => t.status === 'Pending').length;
-  const countEscalated = tickets.filter((t) => t.status === 'Escalated').length;
+  const countUnassigned = tickets.filter((t) => isTicketUnassigned(t) && !['resolved', 'closed'].includes((t.status || '').toLowerCase())).length;
+  const countInProgress = tickets.filter((t) => (t.status || '').toLowerCase() === 'in progress').length;
+  const countPending = tickets.filter((t) => (t.status || '').toLowerCase() === 'pending').length;
+  const countEscalated = tickets.filter((t) => (t.status || '').toLowerCase() === 'escalated' && !['resolved', 'closed'].includes((t.status || '').toLowerCase())).length;
 
   const handleOpenActionModal = (ticket: Ticket, type: 'assign' | 'reassign' | 'status' | 'priority' | 'escalate' | 'deadline') => {
     setSelectedTicket(ticket);
@@ -109,51 +118,88 @@ export const TicketManagementPage: React.FC = () => {
     if (!selectedTicket || !actionModalType) return;
 
     let updatedTicket = { ...selectedTicket };
+    let persisted: Ticket | null = null;
     if (actionModalType === 'assign' || actionModalType === 'reassign') {
       updatedTicket.assignedTo = modalAssignee;
       if (updatedTicket.status === 'Open') updatedTicket.status = 'In Progress';
-      AdminApiService.updateTicket(selectedTicket.id, { assignedTo: modalAssignee, status: updatedTicket.status }, modalNote || `Assigned to ${modalAssignee}`);
+      persisted = await AdminApiService.updateTicket(selectedTicket.id, { assignedTo: modalAssignee, status: updatedTicket.status }, modalNote || `Assigned to ${modalAssignee}`);
     } else if (actionModalType === 'status') {
       updatedTicket.status = modalStatus;
-      AdminApiService.updateTicket(selectedTicket.id, { status: modalStatus }, modalNote || `Status changed to ${modalStatus}`);
+      persisted = await AdminApiService.updateTicket(selectedTicket.id, { status: modalStatus }, modalNote || `Status changed to ${modalStatus}`);
     } else if (actionModalType === 'priority') {
       updatedTicket.priority = modalPriority;
-      AdminApiService.updateTicket(selectedTicket.id, { priority: modalPriority }, modalNote || `Priority changed to ${modalPriority}`);
+      persisted = await AdminApiService.updateTicket(selectedTicket.id, { priority: modalPriority }, modalNote || `Priority changed to ${modalPriority}`);
     } else if (actionModalType === 'escalate') {
       updatedTicket.status = 'Escalated';
       updatedTicket.priority = 'Urgent';
-      AdminApiService.updateTicket(selectedTicket.id, { status: 'Escalated', priority: 'Urgent' }, modalNote || 'Ticket escalated');
+      persisted = await AdminApiService.updateTicket(selectedTicket.id, { status: 'Escalated', priority: 'Urgent' }, modalNote || 'Ticket escalated');
     } else if (actionModalType === 'deadline') {
       const formatted = modalDeadline.replace('T', ' ').slice(0, 16);
       updatedTicket.dueDate = formatted;
-      AdminApiService.updateTicket(selectedTicket.id, { dueDate: formatted }, modalNote || `SLA Deadline set to ${formatted}`);
+      persisted = await AdminApiService.updateTicket(selectedTicket.id, { dueDate: formatted }, modalNote || `SLA Deadline set to ${formatted}`);
     }
 
-    setTickets((prev) => prev.map((t) => (t.id === selectedTicket.id ? updatedTicket : t)));
-    setSelectedTicket(updatedTicket);
+    const finalTicket = persisted || updatedTicket;
+    setTickets((prev) => prev.map((t) => (t.id === selectedTicket.id ? finalTicket : t)));
+    setSelectedTicket(finalTicket);
     setActionModalType(null);
+    await loadData();
   };
 
-  const handleOpenDetail = (ticket: Ticket) => {
+  const handleOpenDetail = async (ticket: Ticket) => {
     setSelectedTicket(ticket);
     setIsDetailDrawerOpen(true);
+    // Load full ticket (history + attachments) from the database.
+    const full = await AdminApiService.getTicketById(ticket.id);
+    if (full) setSelectedTicket(full);
   };
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!newComment.trim() || !selectedTicket) return;
-    const commentObj = {
-      id: `c-${Date.now()}`,
-      author: 'Sudheshna Bharadwaj (Admin)',
-      text: newComment.trim(),
-      timestamp: 'Just now'
-    };
-    const updated = {
-      ...selectedTicket,
-      history: [...(selectedTicket.history || []), commentObj]
-    };
-    setSelectedTicket(updated);
-    setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    const updated = await AdminApiService.addComment(selectedTicket.id, newComment.trim());
+    if (updated) {
+      setSelectedTicket(updated);
+      setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    }
     setNewComment('');
+  };
+
+  const handleDownloadAttachment = async (file: string) => {
+    if (!selectedTicket) return;
+    const rawName = file.includes(' (') ? file.split(' (')[0] : file;
+    const ticketId = selectedTicket.ticketNumber || selectedTicket.id;
+    try {
+      await ensureBackendSession();
+      const res = await authenticatedFetch(
+        `${BACKEND_API_URL}/api/v1/tickets/${ticketId}/attachments/${encodeURIComponent(rawName)}/download`
+      );
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = rawName.includes('.') ? rawName : `${rawName}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
+      }
+      alert(`Could not download "${rawName}" (server returned ${res.status}).`);
+    } catch {
+      alert(`Could not download "${rawName}". Please check your connection and try again.`);
+    }
+  };
+
+  const handleViewAttachment = async (file: string) => {
+    if (!selectedTicket) return;
+    const rawName = file.includes(' (') ? file.split(' (')[0] : file;
+    const ticketId = selectedTicket.ticketNumber || selectedTicket.id;
+    await ensureBackendSession();
+    const url = withAccessToken(
+      `${BACKEND_API_URL}/api/v1/tickets/${ticketId}/attachments/${encodeURIComponent(rawName)}/view`
+    );
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -760,18 +806,56 @@ export const TicketManagementPage: React.FC = () => {
               {/* Attachments */}
               <div>
                 <h3 className="font-bold text-slate-900 text-sm mb-2 flex items-center gap-1.5">
-                  <Paperclip className="w-4 h-4 text-slate-500" /> Attachments (2)
+                  <Paperclip className="w-4 h-4 text-slate-500" /> Attachments ({selectedTicket.attachments?.length || 0})
                 </h3>
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors cursor-pointer">
-                    <span className="font-mono text-[11px] text-[#0284C7] font-bold">system_error_log.txt</span>
-                    <span className="text-slate-400 text-[10px]">14 KB</span>
+                {selectedTicket.attachmentsError ? (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                    <p className="font-semibold">Attachments could not be loaded.</p>
+                    <p className="mt-0.5">{selectedTicket.attachmentsError}</p>
                   </div>
-                  <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors cursor-pointer">
-                    <span className="font-mono text-[11px] text-[#0284C7] font-bold">screenshot_alert.png</span>
-                    <span className="text-slate-400 text-[10px]">240 KB</span>
+                ) : (selectedTicket.attachments && selectedTicket.attachments.length > 0) ? (
+                  <div className="space-y-2">
+                    {selectedTicket.attachments.map((att, idx) => {
+                      const sep = att.lastIndexOf(' (');
+                      const attName = sep !== -1 ? att.slice(0, sep) : att;
+                      const attSize = sep !== -1 ? att.slice(sep + 2).replace(/\)\s*$/, '') : '';
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <div className="min-w-0">
+                              <span className="font-mono text-xs text-[#0284C7] font-semibold truncate block">{attName}</span>
+                              {attSize && <span className="text-slate-400 text-[10px] block">{attSize}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleViewAttachment(att)}
+                              className="px-2 py-1 text-[11px] font-medium text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-100 flex items-center gap-1"
+                              title="View attachment"
+                            >
+                              <Eye className="w-3 h-3 text-slate-500" /> View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAttachment(att)}
+                              className="px-2 py-1 text-[11px] font-medium text-white bg-[#0284C7] rounded hover:bg-[#0270a5] flex items-center gap-1"
+                              title="Download attachment"
+                            >
+                              <Download className="w-3 h-3" /> Download
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No attachments for this ticket.</p>
+                )}
               </div>
 
               {/* Comments & Activity History */}
@@ -779,18 +863,19 @@ export const TicketManagementPage: React.FC = () => {
                 <h3 className="font-bold text-slate-900 text-sm mb-3">Activity & Comments</h3>
 
                 <div className="space-y-3 mb-4">
-                  {(selectedTicket.history || [
-                    { id: '1', author: 'System Sentinel', text: 'Ticket submitted and queued for triage.', timestamp: '2 hours ago' },
-                    { id: '2', author: 'Kotesh Goud', text: 'Triaged and assigned priority.', timestamp: '1 hour ago' }
-                  ]).map((item) => (
-                    <div key={item.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-900">{item.author}</span>
-                        <span className="text-[10px] text-slate-400">{item.timestamp}</span>
+                  {(selectedTicket.history && selectedTicket.history.length > 0) ? (
+                    selectedTicket.history.map((item) => (
+                      <div key={item.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{item.author}</span>
+                          <span className="text-[10px] text-slate-400">{item.timestamp}</span>
+                        </div>
+                        <p className="text-slate-700">{item.text}</p>
                       </div>
-                      <p className="text-slate-700">{item.text}</p>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">No activity recorded yet.</p>
+                  )}
                 </div>
 
                 {/* Add Comment Input */}

@@ -35,12 +35,22 @@ export interface Ticket {
   status: TicketStatus;
   assignedAgent: string;
   assignedAgentId?: string;
+  isUnassigned?: boolean;
   slaStatus: SLAStatus;
   slaRemaining: string;
   createdAt: string;
-  updatedAt: string;
-  attachments?: { name: string; size: string; url?: string }[];
+  updatedAt?: string;
   comments?: TicketComment[];
+  attachments?: {
+    id?: string;
+    name: string;
+    size: string;
+    url?: string;
+    viewUrl?: string;
+    type?: string;
+    uploadedBy?: string;
+    createdAt?: string;
+  }[];
   activities?: TicketActivity[];
   escalationReason?: string;
   assignedBy?: string;

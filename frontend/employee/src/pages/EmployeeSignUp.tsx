@@ -4,7 +4,7 @@ import { Ticket, Mail, Lock, User, Briefcase, ArrowRight, UserCheck, ShieldCheck
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 
-import { supabase } from '../services/supabaseClient';
+import { registerBackend } from '../services/backendAuth';
 
 export const EmployeeSignUp: React.FC = () => {
   const navigate = useNavigate();
@@ -62,37 +62,17 @@ export const EmployeeSignUp: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
 
     try {
-      // 1. Check if user already exists in Supabase
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', cleanEmail)
-        .maybeSingle();
+      const res = await registerBackend({
+        name: fullName.trim(),
+        email: cleanEmail,
+        password,
+        department,
+        designation: jobTitle || 'Team Member',
+        employee_id: employeeId.trim(),
+      });
 
-      if (existingUser) {
-        setErrors({ email: 'An account with this email address already exists. Please sign in instead.' });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // 2. Direct insert into Supabase users table
-      const newUserId = `usr-emp-${Date.now()}`;
-      const { error: insErr } = await supabase
-        .from('users')
-        .insert([{
-          id: newUserId,
-          name: fullName.trim(),
-          email: cleanEmail,
-          department,
-          designation: jobTitle || 'Team Member',
-          role: 'employee',
-          password,
-          status: 'Active',
-        }]);
-
-      if (insErr) {
-        console.error('Supabase user registration error:', insErr);
-        setErrors({ email: `Registration error: ${insErr.message}` });
+      if (!res.ok) {
+        setErrors({ email: res.error || 'Registration failed. Please try again.' });
         setIsSubmitting(false);
         return;
       }
@@ -107,7 +87,7 @@ export const EmployeeSignUp: React.FC = () => {
       });
     } catch (err: any) {
       console.error('Registration error:', err);
-      setErrors({ email: 'Unable to connect to database. Please try again.' });
+      setErrors({ email: 'Unable to connect to registration service. Please try again.' });
       setIsSubmitting(false);
     }
   };

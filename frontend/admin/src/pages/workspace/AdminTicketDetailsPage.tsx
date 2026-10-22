@@ -10,10 +10,17 @@ import {
   FileText,
   Activity,
   AlertCircle,
+  AlertTriangle,
+  RefreshCw,
   CheckCircle,
-  Calendar
+  Calendar,
+  Eye,
+  Download,
+  Trash2,
+  X
 } from 'lucide-react';
-import { AdminApiService } from '../../services/api';
+import { AdminApiService, BACKEND_API_URL, fetchBackendAttachmentsDetailed } from '../../services/api';
+import { authenticatedFetch, ensureBackendSession, withAccessToken } from '../../services/backendAuth';
 import type { Ticket, TicketStatus } from '../../types';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -45,6 +52,11 @@ export const AdminTicketDetailsPage: React.FC = () => {
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [deadlineValue, setDeadlineValue] = useState('');
   const [isSavingDeadline, setIsSavingDeadline] = useState(false);
+
+  // Attachment Preview & Delete Ticket States
+  const [previewFile, setPreviewFile] = useState<{ name: string; url?: string } | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -131,6 +143,69 @@ export const AdminTicketDetailsPage: React.FC = () => {
     }
   };
 
+  const handleDownloadAttachment = async (file: string) => {
+    const rawName = file.includes(' (') ? file.split(' (')[0] : file;
+    const ticketId = ticket?.ticketNumber || id;
+    try {
+      await ensureBackendSession();
+      const res = await authenticatedFetch(`${BACKEND_API_URL}/api/v1/tickets/${ticketId}/attachments/${encodeURIComponent(rawName)}/download`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = rawName.includes('.') ? rawName : `${rawName}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setToastMessage(`Could not download "${rawName}" (not found).`);
+    } catch {
+      setToastMessage(`Could not download "${rawName}". Please try again.`);
+    }
+  };
+
+  const handleViewAttachment = async (file: string) => {
+    const rawName = file.includes(' (') ? file.split(' (')[0] : file;
+    const ticketId = ticket?.ticketNumber || id;
+    await ensureBackendSession();
+    const url = withAccessToken(`${BACKEND_API_URL}/api/v1/tickets/${ticketId}/attachments/${encodeURIComponent(rawName)}/view`);
+    setPreviewFile({ name: rawName, url });
+  };
+
+  const reloadAttachments = async () => {
+    if (!id || !ticket) return;
+    const result = await fetchBackendAttachmentsDetailed(id);
+    setTicket({
+      ...ticket,
+      attachments: result.attachments.map((a) =>
+        a.size && a.size !== 'N/A' ? `${a.name} (${a.size})` : a.name,
+      ),
+      attachmentsError: result.error,
+    });
+  };
+
+  const handleDeleteTicket = async () => {
+    if (!ticket) return;
+    setIsDeleting(true);
+    try {
+      const ok = await AdminApiService.deleteTicket(ticket.id);
+      if (ok) {
+        navigate(fromSource === 'my-tickets' ? '/admin/workspace/my-tickets' : '/admin/workspace/all');
+      } else {
+        setToastMessage('Failed to delete ticket. Please try again.');
+        setShowDeleteModal(false);
+      }
+    } catch (e: any) {
+      setToastMessage(`Error deleting ticket: ${e.message}`);
+      setShowDeleteModal(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center max-w-lg mx-auto mt-12 shadow-2xs font-sans">
@@ -188,15 +263,19 @@ export const AdminTicketDetailsPage: React.FC = () => {
     e.preventDefault();
     if (!id || modalAttachedFiles.length === 0) return;
     let updatedTicket: Ticket | null = ticket;
-    for (const f of modalAttachedFiles) {
-      const fileNameStr = `${f.name} (${f.size})`;
-      updatedTicket = await AdminApiService.addAttachment(id, fileNameStr);
-    }
-    if (updatedTicket) {
-      setTicket({ ...updatedTicket });
-      setModalAttachedFiles([]);
-      setShowAttachModal(false);
-      setToastMessage(`${modalAttachedFiles.length} file(s) attached successfully.`);
+    try {
+      for (const f of modalAttachedFiles) {
+        const fileNameStr = `${f.name} (${f.size})`;
+        updatedTicket = await AdminApiService.addAttachment(id, fileNameStr, f.file);
+      }
+      if (updatedTicket) {
+        setTicket({ ...updatedTicket });
+        setModalAttachedFiles([]);
+        setShowAttachModal(false);
+        setToastMessage(`${modalAttachedFiles.length} file(s) attached successfully.`);
+      }
+    } catch (e: any) {
+      setToastMessage(`Attachment upload failed: ${e?.message || 'unknown error'}`);
     }
   };
 
@@ -259,6 +338,16 @@ export const AdminTicketDetailsPage: React.FC = () => {
           >
             <Paperclip className="w-3.5 h-3.5 mr-1" />
             Add Attachment
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDeleteModal(true)}
+            className="border-rose-200 text-rose-600 hover:bg-rose-50 font-semibold text-xs cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-500" />
+            Delete
           </Button>
         </div>
       </div>
@@ -438,15 +527,53 @@ export const AdminTicketDetailsPage: React.FC = () => {
             </button>
           </div>
 
-          {ticket.attachments && ticket.attachments.length > 0 ? (
+          {ticket.attachmentsError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                <div className="flex-1">
+                  <p className="font-semibold">Attachments could not be loaded.</p>
+                  <p className="mt-0.5">{ticket.attachmentsError}</p>
+                  <button
+                    type="button"
+                    onClick={reloadAttachments}
+                    className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 hover:bg-amber-100"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Retry
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : ticket.attachments && ticket.attachments.length > 0 ? (
             <div className="flex flex-wrap gap-3">
               {ticket.attachments.map((file, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs text-slate-700 font-medium hover:border-[#0284C7] transition-colors"
+                  className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs text-slate-700 font-medium hover:border-[#0284C7] transition-all"
                 >
-                  <FileText className="w-4 h-4 text-[#0284C7]" />
-                  <span>{file}</span>
+                  <div className="flex items-center gap-2 max-w-[200px] truncate">
+                    <FileText className="w-4 h-4 text-[#0284C7] shrink-0" />
+                    <span className="truncate">{file}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <button
+                      type="button"
+                      onClick={() => handleViewAttachment(file)}
+                      className="p-1 hover:bg-slate-200/80 rounded text-slate-500 hover:text-[#0284C7] transition-colors cursor-pointer"
+                      title="View Attachment"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadAttachment(file)}
+                      className="p-1 hover:bg-slate-200/80 rounded text-slate-500 hover:text-[#0284C7] transition-colors cursor-pointer"
+                      title="Download Attachment"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -643,28 +770,28 @@ export const AdminTicketDetailsPage: React.FC = () => {
                   onClick={() => handleApplyPresetDeadline(4)}
                   className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-xs font-semibold hover:bg-rose-100 transition-colors cursor-pointer text-left"
                 >
-                  Urgent: +4 Hours
+                  Urgent / Critical: +4 Hours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyPresetDeadline(8)}
+                  className="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer text-left"
+                >
+                  High: +8 Hours
                 </button>
                 <button
                   type="button"
                   onClick={() => handleApplyPresetDeadline(24)}
-                  className="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer text-left"
+                  className="px-2.5 py-1.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 text-xs font-semibold hover:bg-sky-100 transition-colors cursor-pointer text-left"
                 >
-                  High: +24 Hours (1 Day)
+                  Medium: +24 Hours (1 Day)
                 </button>
                 <button
                   type="button"
                   onClick={() => handleApplyPresetDeadline(48)}
-                  className="px-2.5 py-1.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 text-xs font-semibold hover:bg-sky-100 transition-colors cursor-pointer text-left"
-                >
-                  Medium: +48 Hours (2 Days)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPresetDeadline(72)}
                   className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-xs font-semibold hover:bg-slate-100 transition-colors cursor-pointer text-left"
                 >
-                  Low: +72 Hours (3 Days)
+                  Low: +48 Hours (2 Days)
                 </button>
               </div>
             </div>
@@ -702,6 +829,111 @@ export const AdminTicketDetailsPage: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Attachment Preview Modal */}
+      {previewFile && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full border border-slate-200 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#0284C7]" />
+                <h3 className="text-sm font-bold text-slate-800 truncate max-w-[280px]">
+                  {previewFile.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setPreviewFile(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 text-center space-y-3 my-4 max-h-[60vh] overflow-auto">
+              {previewFile.url && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(previewFile.name) ? (
+                <img
+                  src={previewFile.url}
+                  alt={previewFile.name}
+                  className="max-h-[55vh] mx-auto rounded-lg border border-slate-200"
+                  onError={() => setPreviewFile((p) => (p ? { ...p, url: undefined } : p))}
+                />
+              ) : previewFile.url && /\.pdf$/i.test(previewFile.name) ? (
+                <iframe
+                  src={previewFile.url}
+                  title={previewFile.name}
+                  className="w-full h-[55vh] rounded-lg border border-slate-200"
+                />
+              ) : (
+                <>
+                  <FileText className="w-12 h-12 text-[#0284C7] mx-auto opacity-80" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">{previewFile.name}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">Ticket: {ticket.ticketNumber}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Preview is not available for this file type. Use Download to open it.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPreviewFile(null)}
+                className="border-slate-200 text-slate-600"
+              >
+                Close Preview
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleDownloadAttachment(previewFile.name)}
+                className="bg-[#0284C7] text-white flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Attachment
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: Delete Ticket Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-md w-full border border-slate-200 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2.5 text-rose-600 font-bold text-base mb-2">
+              <AlertCircle className="w-5 h-5 text-rose-600" />
+              <h3>Delete Ticket Confirmation</h3>
+            </div>
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Are you sure you want to permanently delete ticket <strong className="text-slate-900">{ticket.ticketNumber}</strong>? This action will remove all associated comments, activities, and attachments from the system.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isDeleting}
+                onClick={() => setShowDeleteModal(false)}
+                className="border-slate-200 text-slate-600"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={isDeleting}
+                onClick={handleDeleteTicket}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

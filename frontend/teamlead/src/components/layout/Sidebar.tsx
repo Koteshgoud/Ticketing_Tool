@@ -12,7 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  TicketCheck
+  TicketCheck,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';

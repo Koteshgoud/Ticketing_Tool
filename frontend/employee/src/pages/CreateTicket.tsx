@@ -43,17 +43,23 @@ export const CreateTicket: React.FC = () => {
   const [sentEmailLogs, setSentEmailLogs] = useState<SentEmailNotification[]>([]);
 
   const toggleDepartment = (deptName: string) => {
+    let next: string[];
     if (selectedDepartments.includes(deptName)) {
       if (selectedDepartments.length === 1) return; // Keep at least 1 department selected
-      setSelectedDepartments(selectedDepartments.filter((d) => d !== deptName));
+      next = selectedDepartments.filter((d) => d !== deptName);
     } else {
-      setSelectedDepartments([...selectedDepartments, deptName]);
+      next = [...selectedDepartments, deptName];
     }
+    setSelectedDepartments(next);
+    setSelectedTeamLeadIds([]);
+    setSelectedTeamLeadObjs([]);
+    setSelectedEmployeeIds([]);
+    setSelectedEmployeeObjs([]);
   };
 
   const isOtherDeptSelected = selectedDepartments.includes('Other');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
@@ -88,16 +94,26 @@ export const CreateTicket: React.FC = () => {
       dept === 'Other' ? (customDepartment.trim() || 'Other') : dept
     );
 
-    const attachmentStrings = attachedFiles.map((f) => `${f.name} (${f.size})`);
+    const seen = new Set<string>();
+    const uniqueFiles = attachedFiles.filter((f) => {
+      const key = `${f.name.toLowerCase()}_${f.size}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const attachmentStrings = uniqueFiles.map((f) => `${f.name} (${f.size})`);
 
     try {
-      const newTicket = EmployeeService.createTicket({
+      const newTicket = await EmployeeService.createTicket({
         title: subject.trim(),
         description: description.trim(),
         category: finalCategory,
         departments: finalDepartments,
         priority,
         attachments: attachmentStrings,
+        rawFiles: uniqueFiles
+          .map((f) => f.file)
+          .filter((f): f is File => !!f),
         teamLeads: selectedTeamLeadObjs.map((tl) => ({
           id: tl.id,
           name: tl.name,
@@ -121,8 +137,8 @@ export const CreateTicket: React.FC = () => {
       setCreatedTicketId(newTicket.id);
       setSentEmailLogs(emails);
       setIsSuccess(true);
-    } catch {
-      setValidationError('Ticket created, but email notification failed.');
+    } catch (err: any) {
+      setValidationError(err?.message || 'Could not create ticket. Please check your selections and try again.');
     }
   };
 

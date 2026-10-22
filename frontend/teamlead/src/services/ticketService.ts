@@ -1,341 +1,358 @@
 import { Ticket, TicketStatus, TicketPriority, TicketCategory } from '../types/ticket';
-import { supabase } from './supabaseClient';
+import {
+  API_BASE,
+  apiRequest,
+  apiRequestSafe,
+  authenticatedFetch,
+  jsonInit,
+  withAccessToken,
+} from './backendAuth';
+
+export interface AttachmentRecord {
+  id?: string;
+  name: string;
+  size: string;
+  type?: string;
+  url?: string;
+  viewUrl?: string;
+  createdAt?: string;
+  uploadedBy?: string;
+}
+
+export interface AttachmentListResult {
+  attachments: AttachmentRecord[];
+  error: string | null;
+}
+
+function mapAttachment(raw: any): AttachmentRecord {
+  return {
+    id: raw?.id,
+    name: raw?.name || 'attachment',
+    size: raw?.size || 'N/A',
+    type: raw?.mime_type || raw?.type,
+    // Downloads/previews are authenticated endpoints; attach the short-lived
+    // token so browser navigation works without a custom header.
+    url: withAccessToken(raw?.download_url || raw?.url || ''),
+    viewUrl: withAccessToken(raw?.view_url || ''),
+    createdAt: raw?.created_at,
+    uploadedBy: raw?.uploaded_by,
+  };
+}
+
+/** Normalise the server SLA label to the badge vocabulary used by the UI. */
+function mapSlaStatus(value: any): Ticket['slaStatus'] {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('breach')) return 'Breached';
+  if (text.includes('risk')) return 'At Risk';
+  return 'Within SLA';
+}
+
+/** Map a backend ticket row (snake_case + server-computed SLA) to the UI model. */
+export function mapTicket(row: any): Ticket {
+  return {
+    id: row.id,
+    subject: row.subject || 'No Subject',
+    description: row.description || '',
+    employee: row.employee || 'Employee',
+    employeeId: row.employee_id || '',
+    employeeEmail: row.employee_email || '',
+    department: row.department || 'IT Support',
+    category: (row.category || 'Other') as TicketCategory,
+    priority: (row.priority || 'Medium') as TicketPriority,
+    status: (row.status || 'Open') as TicketStatus,
+    assignedAgent: row.assigned_agent || 'Unassigned',
+    assignedAgentId: row.assigned_agent_id || undefined,
+    isUnassigned: typeof row.is_unassigned === 'boolean' ? row.is_unassigned : undefined,
+    slaStatus: mapSlaStatus(row.sla_status),
+    slaRemaining: row.sla_remaining || '',
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+    attachments: Array.isArray(row.attachments) ? row.attachments.map(mapAttachment) : [],
+    comments: Array.isArray(row.comments)
+      ? row.comments.map((c: any) => ({
+          id: c.id,
+          ticketId: c.ticket_id,
+          authorName: c.author_name || c.author || 'User',
+          authorRole: (c.author_role || 'teamlead') as any,
+          message: c.message || '',
+          createdAt: c.created_at,
+          isInternal: !!c.is_internal,
+        }))
+      : [],
+    activities: Array.isArray(row.activities)
+      ? row.activities.map((a: any) => ({
+          id: a.id,
+          ticketId: a.ticket_id,
+          user: a.user,
+          action: a.action,
+          timestamp: a.timestamp,
+        }))
+      : [],
+    escalationReason: row.escalation_reason || undefined,
+    assignedBy: row.assigned_by || '',
+    assignedDate: row.assigned_date || undefined,
+    resolutionSummary: row.resolution_summary || undefined,
+    subCategory: row.sub_category || undefined,
+    assignedToType: (row.assigned_to_type || undefined) as Ticket['assignedToType'],
+    handledBy: (row.handled_by || undefined) as Ticket['handledBy'],
+    departments: Array.isArray(row.departments) ? row.departments : undefined,
+  };
+}
+
+export interface TicketListResult {
+  tickets: Ticket[];
+  error: string | null;
+}
+
+let _ticketsInflight: Promise<TicketListResult> | null = null;
+let _ticketsCache: Ticket[] | null = null;
+let _lastTicketsTime = 0;
+const TICKETS_CACHE_TTL = 3000;
+
+export function invalidateTeamLeadTicketsCache(): void {
+  _ticketsCache = null;
+  _lastTicketsTime = 0;
+}
 
 export const ticketService = {
-  getTickets: async (): Promise<Ticket[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select('*')
-        .order('created_at', { ascending: false });
+  invalidateCache(): void {
+    invalidateTeamLeadTicketsCache();
+  },
 
-      if (!error && data) {
-        const { data: allAttachments } = await supabase
-          .from('ticket_attachments')
-          .select('*');
-
-        const attMap: Record<string, { name: string; size: string }[]> = {};
-        if (allAttachments) {
-          allAttachments.forEach((att: any) => {
-            if (!attMap[att.ticket_id]) attMap[att.ticket_id] = [];
-            attMap[att.ticket_id].push({ name: att.name, size: att.size || '1 MB' });
-          });
-        }
-
-        return data.map((row: any) => ({
-          id: row.id,
-          subject: row.subject || 'No Subject',
-          description: row.description || '',
-          employee: row.employee || 'Employee',
-          employeeId: row.employee_id || 'EMP001',
-          employeeEmail: row.employee_email || 'employee@company.com',
-          category: (row.category || 'Other') as TicketCategory,
-          priority: (row.priority || 'Medium') as TicketPriority,
-          status: (row.status || 'Open') as TicketStatus,
-          assignedAgent: row.assigned_agent || 'Unassigned',
-          assignedBy: row.assigned_by || '',
-          department: row.department || 'IT Support',
-          slaStatus: row.sla_status || 'Within SLA',
-          slaRemaining: row.sla_remaining || '8h remaining',
-          createdAt: row.created_at || new Date().toISOString(),
-          updatedAt: row.updated_at || new Date().toISOString(),
-          attachments: (attMap[row.id] && attMap[row.id].length > 0) ? attMap[row.id] : (Array.isArray(row.attachments) ? row.attachments : []),
-          comments: [],
-          activities: [],
-        }));
-      }
-    } catch (e) {
-      console.warn('Error fetching tickets from Supabase:', e);
+  /** Fetch the caller's scoped tickets, surfacing API failures to the caller. */
+  getTicketsDetailed: async (force = false): Promise<TicketListResult> => {
+    const now = Date.now();
+    if (!force && _ticketsCache && now - _lastTicketsTime < TICKETS_CACHE_TTL) {
+      return { tickets: _ticketsCache, error: null };
     }
-    return [];
+    if (_ticketsInflight) {
+      return _ticketsInflight;
+    }
+    _ticketsInflight = (async () => {
+      try {
+        const result = await apiRequestSafe<any[]>('/tickets');
+        if (result.error || !Array.isArray(result.data)) {
+          return {
+            tickets: _ticketsCache || [],
+            error: result.error || 'The server returned an invalid ticket list.',
+          };
+        }
+        const mapped = result.data.map(mapTicket);
+        _ticketsCache = mapped;
+        _lastTicketsTime = Date.now();
+        return { tickets: mapped, error: null };
+      } finally {
+        _ticketsInflight = null;
+      }
+    })();
+    return _ticketsInflight;
+  },
+
+  getTickets: async (force = false): Promise<Ticket[]> => {
+    const result = await ticketService.getTicketsDetailed(force);
+    if (result.error) console.warn('Could not load tickets:', result.error);
+    return result.tickets;
   },
 
   getTicketById: async (id: string): Promise<Ticket | undefined> => {
     try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
-
-      if (!error && data) {
-        const { data: dbActivities } = await supabase
-          .from('ticket_activities')
-          .select('*')
-          .eq('ticket_id', id)
-          .order('timestamp', { ascending: false });
-
-        const { data: dbComments } = await supabase
-          .from('ticket_comments')
-          .select('*')
-          .eq('ticket_id', id)
-          .order('created_at', { ascending: true });
-
-        const { data: dbAttachments } = await supabase
-          .from('ticket_attachments')
-          .select('*')
-          .eq('ticket_id', id)
-          .order('created_at', { ascending: true });
-
-        const mappedAttachments: { name: string; size: string }[] = (dbAttachments && dbAttachments.length > 0)
-          ? dbAttachments.map((a: any) => ({ name: a.name, size: a.size || '1 MB' }))
-          : (Array.isArray(data.attachments) ? data.attachments : []);
-
-        return {
-          id: data.id,
-          subject: data.subject || 'No Subject',
-          description: data.description || '',
-          employee: data.employee || 'Employee',
-          employeeId: data.employee_id || 'EMP001',
-          employeeEmail: data.employee_email || 'employee@company.com',
-          category: (data.category || 'Other') as TicketCategory,
-          priority: (data.priority || 'Medium') as TicketPriority,
-          status: (data.status || 'Open') as TicketStatus,
-          assignedAgent: data.assigned_agent || 'Unassigned',
-          assignedBy: data.assigned_by || '',
-          department: data.department || 'IT Support',
-          slaStatus: data.sla_status || 'Within SLA',
-          slaRemaining: data.sla_remaining || '8h remaining',
-          createdAt: data.created_at || new Date().toISOString(),
-          updatedAt: data.updated_at || new Date().toISOString(),
-          attachments: mappedAttachments,
-          comments: (dbComments || []).map((c: any) => ({
-            id: c.id,
-            ticketId: c.ticket_id,
-            authorName: c.author_name,
-            authorRole: c.author_role || 'teamlead',
-            message: c.message,
-            createdAt: c.created_at,
-            isInternal: !!c.is_internal,
-          })),
-          activities: (dbActivities || []).map((a: any) => ({
-            id: a.id,
-            ticketId: a.ticket_id,
-            user: a.user,
-            action: a.action,
-            timestamp: a.timestamp,
-          })),
-        };
-      }
+      const data = await apiRequest<any>(`/tickets/${encodeURIComponent(id)}`);
+      const ticket = mapTicket(data);
+      const attachments = await ticketService.getAttachmentsDetailed(id);
+      ticket.attachments = attachments.attachments;
+      return ticket;
     } catch (e) {
       console.warn('Error in getTicketById:', e);
+      return undefined;
     }
-    return undefined;
   },
 
-  createTicket: async (newTicketData: Partial<Ticket>): Promise<Ticket> => {
-    const newId = newTicketData.id || `TKT-${Math.floor(1000 + Math.random() * 9000)}`;
-    const now = new Date().toISOString();
-    // Ensure employee_id does not violate foreign key if user id is custom or missing
-    let safeEmployeeId: string | null = newTicketData.employeeId || null;
-    if (safeEmployeeId && !safeEmployeeId.startsWith('TL') && !safeEmployeeId.startsWith('EMP') && !safeEmployeeId.startsWith('usr-')) {
-      safeEmployeeId = null;
+  getAttachmentsDetailed: async (ticketId: string): Promise<AttachmentListResult> => {
+    const result = await apiRequestSafe<any[]>(
+      `/tickets/${encodeURIComponent(ticketId)}/attachments`,
+    );
+    if (result.error || !Array.isArray(result.data)) {
+      return {
+        attachments: [],
+        error: result.error || 'Could not load attachments from the server.',
+      };
     }
+    return { attachments: result.data.map(mapAttachment), error: null };
+  },
 
-    const row = {
-      id: newId,
-      subject: newTicketData.subject || "No Subject",
-      description: newTicketData.description || "",
-      employee: newTicketData.employee || "Sudheshna Bharadwaj",
-      employee_id: safeEmployeeId,
-      employee_email: newTicketData.employeeEmail || "sudheshnabharadwaj@gmail.com",
-      category: newTicketData.category || "Hardware & Devices",
-      priority: newTicketData.priority || "Medium",
-      status: newTicketData.status || "Open",
-      department: (newTicketData.departments && newTicketData.departments.length > 0) ? newTicketData.departments.join(', ') : "IT Support",
-      assigned_agent: newTicketData.assignedAgent || "Unassigned",
-      sla_status: newTicketData.slaStatus || "Within SLA",
-      sla_remaining: newTicketData.slaRemaining || "8h 00m remaining",
-      departments: newTicketData.departments || ["IT Support"],
-    };
+  getAttachments: async (ticketId: string): Promise<AttachmentRecord[]> => {
+    const result = await ticketService.getAttachmentsDetailed(ticketId);
+    return result.attachments;
+  },
 
+  uploadAttachments: async (ticketId: string, files: File[]): Promise<boolean> => {
+    if (!files || files.length === 0) return true;
     try {
-      const { error: insErr } = await supabase.from('tickets').insert([row]);
-      if (insErr) {
-        console.error('Supabase create ticket error:', insErr);
-      }
-
-      // Save attachments to ticket_attachments table
-      if (newTicketData.attachments && newTicketData.attachments.length > 0) {
-        const attRows = newTicketData.attachments.map((att: any, idx: number) => ({
-          id: `att-${Date.now()}-${idx}`,
-          ticket_id: newId,
-          name: typeof att === 'string' ? att : att.name,
-          size: typeof att === 'object' && att.size ? String(att.size) : 'N/A',
-          url: '',
-        }));
-        await supabase.from('ticket_attachments').insert(attRows);
-      }
-
-      supabase.from('ticket_activities').insert([{
-        id: `act-${Date.now()}`,
-        ticket_id: newId,
-        user: row.employee,
-        action: "Ticket created",
-        timestamp: now
-      }]).then(() => {});
+      const form = new FormData();
+      files.forEach((f) => form.append('files', f));
+      const res = await authenticatedFetch(
+        `${API_BASE}/tickets/${encodeURIComponent(ticketId)}/attachments`,
+        { method: 'POST', body: form },
+      );
+      return res.ok;
     } catch (e) {
-      console.warn('Supabase create ticket error:', e);
-    }
-
-    return {
-      id: newId,
-      subject: row.subject,
-      description: row.description,
-      employee: row.employee,
-      employeeId: row.employee_id || 'TL001',
-      employeeEmail: row.employee_email,
-      category: (row.category as TicketCategory) || "Other",
-      priority: (row.priority as TicketPriority) || "Medium",
-      status: (row.status as TicketStatus) || "Open",
-      assignedAgent: row.assigned_agent,
-      slaStatus: row.sla_status,
-      slaRemaining: row.sla_remaining,
-      createdAt: now,
-      updatedAt: now,
-      attachments: newTicketData.attachments || [],
-      comments: [],
-      activities: [{
-        id: `act-${Date.now()}`,
-        ticketId: newId,
-        user: row.employee,
-        action: "Ticket created",
-        timestamp: now,
-      }],
-    };
-  },
-
-  updateTicketStatus: async (id: string, status: TicketStatus): Promise<boolean> => {
-    try {
-      const now = new Date().toISOString();
-      const { error } = await supabase.from('tickets').update({ status, updated_at: now }).eq('id', id);
-      if (error) console.error('Error updating status in Supabase:', error);
-      return !error;
-    } catch {
+      console.warn('Error uploading attachments:', e);
       return false;
     }
   },
 
-  assignAgent: async (id: string, agentName: string, assignedBy?: string): Promise<boolean> => {
+  createTicket: async (newTicketData: Partial<Ticket>, rawFiles?: File[]): Promise<Ticket> => {
+    const departments =
+      newTicketData.departments && newTicketData.departments.length > 0
+        ? newTicketData.departments
+        : undefined;
+
+    const payload = {
+      subject: newTicketData.subject || 'No Subject',
+      description: newTicketData.description || '',
+      category: newTicketData.category || 'Other',
+      priority: newTicketData.priority || 'Medium',
+      department: newTicketData.department || (departments ? departments.join(', ') : undefined),
+      departments,
+      employee: newTicketData.employee || undefined,
+      employee_id: newTicketData.employeeId || undefined,
+      employee_email: newTicketData.employeeEmail || undefined,
+      assigned_agent: newTicketData.assignedAgent || undefined,
+      assigned_agent_id: newTicketData.assignedAgentId || undefined,
+      assigned_to_type: newTicketData.assignedToType || undefined,
+      assigned_by: newTicketData.assignedBy || undefined,
+      status: newTicketData.status || 'Open',
+      team_lead_ids: (newTicketData as any).teamLeadIds || (newTicketData as any).team_lead_ids,
+      team_leads: (newTicketData as any).teamLeads || (newTicketData as any).team_leads,
+      tagged_employee_ids: (newTicketData as any).employeeIds || (newTicketData as any).tagged_employee_ids,
+      employees: (newTicketData as any).taggedEmployees || (newTicketData as any).employees,
+    };
+
+    const created = await apiRequest<any>('/tickets', jsonInit('POST', payload));
+    const ticket = mapTicket(created);
+
+    if (rawFiles && rawFiles.length > 0) {
+      const uploaded = await ticketService.uploadAttachments(ticket.id, rawFiles);
+      if (!uploaded) {
+        console.error('Attachment upload failed for', ticket.id);
+      } else {
+        ticket.attachments = await ticketService.getAttachments(ticket.id);
+      }
+    }
+    invalidateTeamLeadTicketsCache();
+    return ticket;
+  },
+
+  updateTicketStatus: async (id: string, status: TicketStatus): Promise<boolean> => {
     try {
-      const now = new Date().toISOString();
-      const updates: Record<string, any> = { assigned_agent: agentName, updated_at: now };
-      if (assignedBy) updates.assigned_by = assignedBy;
-      const { error } = await supabase.from('tickets').update(updates).eq('id', id);
-      if (error) console.error('Error assigning agent in Supabase:', error);
-      return !error;
-    } catch {
+      await apiRequest(`/tickets/${encodeURIComponent(id)}/status`, jsonInit('POST', { status }));
+      invalidateTeamLeadTicketsCache();
+      return true;
+    } catch (e) {
+      console.warn('Error updating ticket status:', e);
+      return false;
+    }
+  },
+
+  assignAgent: async (
+    id: string,
+    agentName: string,
+    assignedBy?: string,
+    agentId?: string,
+    assignedToType?: string,
+    handledBy?: string,
+  ): Promise<boolean> => {
+    try {
+      await apiRequest(
+        `/tickets/${encodeURIComponent(id)}/assign`,
+        jsonInit('POST', {
+          assigned_agent: agentName,
+          assigned_agent_id: agentId || undefined,
+          assigned_by: assignedBy || undefined,
+          assigned_to_type: assignedToType || undefined,
+          handled_by: handledBy || undefined,
+        }),
+      );
+      invalidateTeamLeadTicketsCache();
+      return true;
+    } catch (e) {
+      console.warn('Error assigning ticket:', e);
       return false;
     }
   },
 
   changePriority: async (id: string, priority: TicketPriority): Promise<boolean> => {
     try {
-      const now = new Date().toISOString();
-      const { error } = await supabase.from('tickets').update({ priority, updated_at: now }).eq('id', id);
-      return !error;
-    } catch {
+      await apiRequest(
+        `/tickets/${encodeURIComponent(id)}`,
+        jsonInit('PATCH', { priority }),
+      );
+      invalidateTeamLeadTicketsCache();
+      return true;
+    } catch (e) {
+      console.warn('Error changing priority:', e);
       return false;
     }
   },
 
   resolveTicket: async (id: string, resolutionSummary?: string): Promise<boolean> => {
     try {
-      const now = new Date().toISOString();
-      const { error } = await supabase.from('tickets').update({
-        status: 'Resolved',
-        resolution_summary: resolutionSummary || 'Resolved by team lead.',
-        updated_at: now,
-      }).eq('id', id);
-      return !error;
-    } catch {
-      return false;
-    }
-  },
-
-  addComment: async (ticketId: string, authorName: string, authorRole: string, message: string, isInternal: boolean = false): Promise<boolean> => {
-    try {
-      await supabase.from('ticket_comments').insert([{
-        id: `comm-${Date.now()}`,
-        ticket_id: ticketId,
-        author_name: authorName,
-        author_role: authorRole,
-        message,
-        is_internal: isInternal,
-        created_at: new Date().toISOString(),
-      }]);
-      await supabase.from('ticket_activities').insert([{
-        id: `act-${Date.now()}`,
-        ticket_id: ticketId,
-        user: authorName,
-        action: isInternal ? 'Added internal note' : 'Added reply',
-        timestamp: new Date().toISOString(),
-      }]);
-      await supabase.from('tickets').update({ updated_at: new Date().toISOString() }).eq('id', ticketId);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-
-  escalateTicket: async (ticketId: string, reason: string, escalatedBy: string, subject?: string, priority?: TicketPriority): Promise<boolean> => {
-    try {
-      await supabase.from('tickets').update({
-        status: 'Escalated',
-        escalation_reason: reason,
-      }).eq('id', ticketId);
-
-      await supabase.from('escalations').insert([{
-        id: `ESC-${Date.now()}`,
-        ticket_id: ticketId,
-        subject: subject || `Escalated Ticket ${ticketId}`,
-        priority: priority || 'High',
-        escalated_by: escalatedBy,
-        escalated_to: 'Tier 3 Operations',
-        escalation_reason: reason,
-        sla_status: 'Breached SLA',
-        escalated_date: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        status: 'Pending Review',
-      }]);
-
-      await supabase.from('ticket_activities').insert([{
-        id: `act-${Date.now()}`,
-        ticket_id: ticketId,
-        user: escalatedBy,
-        action: `Escalated ticket: ${reason}`,
-        timestamp: new Date().toISOString(),
-      }]);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-
-  addAttachment: async (ticketId: string, attachment: { name: string; size: string }): Promise<boolean> => {
-    try {
-      const now = new Date().toISOString();
-      await supabase.from('ticket_attachments').insert([{
-        id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        ticket_id: ticketId,
-        name: attachment.name,
-        size: attachment.size || '1 MB',
-        url: '',
-        created_at: now,
-      }]);
-
-      await supabase.from('ticket_activities').insert([{
-        id: `act-${Date.now()}`,
-        ticket_id: ticketId,
-        user: 'Team Lead',
-        action: `Uploaded attachment: ${attachment.name}`,
-        timestamp: now,
-      }]);
-
-      await supabase.from('tickets').update({ updated_at: now }).eq('id', ticketId);
+      await apiRequest(
+        `/tickets/${encodeURIComponent(id)}/resolve`,
+        jsonInit('POST', { resolution_summary: resolutionSummary || 'Resolved by team lead.' }),
+      );
+      invalidateTeamLeadTicketsCache();
       return true;
     } catch (e) {
-      console.warn('Error adding attachment to Supabase:', e);
+      console.warn('Error resolving ticket:', e);
       return false;
     }
-  }
+  },
+
+  addComment: async (
+    ticketId: string,
+    _authorName: string,
+    _authorRole: string,
+    message: string,
+    isInternal: boolean = false,
+  ): Promise<boolean> => {
+    try {
+      // Author identity is taken from the token server-side, never from the UI.
+      await apiRequest(
+        `/tickets/${encodeURIComponent(ticketId)}/comments`,
+        jsonInit('POST', { message, is_internal: isInternal }),
+      );
+      invalidateTeamLeadTicketsCache();
+      return true;
+    } catch (e) {
+      console.warn('Error adding comment:', e);
+      return false;
+    }
+  },
+
+  escalateTicket: async (
+    ticketId: string,
+    reason: string,
+    _escalatedBy: string,
+    _subject?: string,
+    _priority?: TicketPriority,
+  ): Promise<boolean> => {
+    try {
+      await apiRequest(
+        `/tickets/${encodeURIComponent(ticketId)}/escalate`,
+        jsonInit('POST', { reason }),
+      );
+      invalidateTeamLeadTicketsCache();
+      return true;
+    } catch (e) {
+      console.warn('Error escalating ticket:', e);
+      return false;
+    }
+  },
+
+  /**
+   * Deprecated: attachments can no longer be registered as metadata-only rows.
+   * Use ``uploadAttachments`` so the bytes are actually stored and authorized.
+   */
+  addAttachment: async (): Promise<boolean> => false,
 };
