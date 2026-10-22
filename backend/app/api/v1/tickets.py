@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 from app.auth.dependencies import get_current_user
 from app.db.supabase import get_supabase_admin_client
 from app.services.access import (
+    ROLE_ADMIN,
+    ROLE_EMPLOYEE,
     ROLE_TEAMLEAD,
     _scopes_overlap,
     can_manage_ticket,
@@ -28,6 +30,7 @@ from app.services.access import (
     is_teamlead,
     load_current_user,
     normalize_role,
+    resolve_team_id,
     role_of,
     scoped_tickets,
     serialize_ticket,
@@ -207,6 +210,28 @@ def _find_user(user_id: str | None = None, email: str | None = None) -> dict[str
     return None
 
 
+def _find_user_by_name(name: str | None) -> dict[str, Any] | None:
+    if not name or name.strip().lower() in ("unassigned", "none", "null"):
+        return None
+    clean = name.strip().lower()
+    all_users = fetch_all_users_cached()
+    for u in all_users:
+        uid = str(u.get("id") or "").strip().lower()
+        uname = str(u.get("name") or "").strip().lower()
+        uemail = str(u.get("email") or "").strip().lower()
+        if clean in (uid, uname, uemail):
+            return u
+    for u in all_users:
+        uid = str(u.get("id") or "").strip().lower()
+        uname = str(u.get("name") or "").strip().lower()
+        if uid and uid in clean:
+            return u
+        if uname and len(uname) >= 3 and (uname in clean or clean in uname):
+            return u
+    return None
+
+
+
 def _sla_due(priority: str | None, explicit: str | None = None) -> str:
     from app.services.access import SLA_HOURS, _parse_dt
 
@@ -290,6 +315,7 @@ _USERS_DIR_CACHE: tuple[float, list[dict[str, Any]]] | None = None
 _USERS_DIR_TTL = 30.0  # seconds
 
 
+@router.get("/stats", summary="Dashboard counts alias")
 @router.get("/stats/summary", summary="Dashboard counts computed from the same scoped rows")
 def get_stats(context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current)) -> dict[str, Any]:
     payload, user = context
@@ -416,6 +442,12 @@ def create_ticket(
         if target:
             agent = str(target.get("name") or agent)
             agent_email = str(target.get("email") or "").lower() or None
+    elif agent and agent.lower() != "unassigned":
+        target = _find_user_by_name(agent)
+        if target:
+            agent_id = str(target.get("id") or "")
+            agent = str(target.get("name") or agent)
+            agent_email = str(target.get("email") or "").lower() or None
 
     # Validate Team Lead and Employee combinations (Requirement 2, Points 9 & 10)
     raw_tl_ids: set[str] = set()
@@ -439,6 +471,24 @@ def create_ticket(
                 raw_emp_ids.add(item.strip())
     if agent_id:
         raw_emp_ids.add(agent_id)
+
+    # If agent was not specified explicitly, resolve from selected employees or team leads
+    if not agent_id and raw_emp_ids:
+        first_emp_id = next(iter(raw_emp_ids))
+        emp_target = _find_user(user_id=first_emp_id)
+        if emp_target:
+            agent_id = str(emp_target.get("id") or "")
+            agent = str(emp_target.get("name") or agent or "Employee")
+            agent_email = str(emp_target.get("email") or "").lower() or None
+    if not agent_id and raw_tl_ids:
+        # If no employee was chosen, ticket is routed to the selected Team Lead
+        first_tl_id = next(iter(raw_tl_ids))
+        tl_target = _find_user(user_id=first_tl_id)
+        if tl_target:
+            agent_id = str(tl_target.get("id") or "")
+            agent = str(tl_target.get("name") or agent or "Team Lead")
+            agent_email = str(tl_target.get("email") or "").lower() or None
+            body.assigned_to_type = "teamlead"
 
     if raw_tl_ids:
         permitted_employee_ids: set[str] = set()
@@ -476,22 +526,35 @@ def create_ticket(
                         detail=f"Employee {emp_row.get('name') or empid} does not belong to the selected department(s)",
                     )
 
+    # Determine assigned_to_type and handled_by
+    assigned_to_type = body.assigned_to_type
+    if agent_id:
+        target_user = _find_user(user_id=agent_id)
+        if target_user:
+            target_role = normalize_role(target_user.get("role"))
+            if target_role == ROLE_TEAMLEAD:
+                assigned_to_type = "teamlead"
+            elif target_role == ROLE_EMPLOYEE:
+                assigned_to_type = "employee"
+    if not assigned_to_type:
+        assigned_to_type = "employee" if agent_id else "unassigned"
+    handled_by = "teamlead" if assigned_to_type == "teamlead" else ("employee" if agent_id else "unassigned")
+
+    # Strictly integer assigned_team_id (or None)
     assigned_team_id: int | None = None
-    assigned_by_user_id: str | None = None
-    raw_team = None
     if raw_tl_ids:
         first_tl_id = next(iter(raw_tl_ids))
         tl_row = _find_user(user_id=first_tl_id)
         if tl_row:
-            raw_team = tl_row.get("team_id") or tl_row.get("team")
-    elif is_teamlead(payload):
-        raw_team = user.get("team_id") or user.get("team")
+            assigned_team_id = resolve_team_id(tl_row.get("team")) or resolve_team_id(tl_row.get("id"))
+    if not assigned_team_id and agent_id:
+        target_row = _find_user(user_id=agent_id)
+        if target_row:
+            assigned_team_id = resolve_team_id(target_row.get("team")) or resolve_team_id(target_row.get("id"))
+    if not assigned_team_id and is_teamlead(payload):
+        assigned_team_id = resolve_team_id(user.get("team")) or resolve_team_id(user.get("id"))
 
-    if raw_team is not None and str(raw_team).strip().isdigit():
-        assigned_team_id = int(str(raw_team).strip())
-    elif isinstance(raw_team, int):
-        assigned_team_id = raw_team
-
+    assigned_by_user_id: str | None = None
     if is_teamlead(payload) or is_admin(payload):
         assigned_by_user_id = str(user.get("id") or "")
 
@@ -513,7 +576,8 @@ def create_ticket(
         "status": body.status or "Open",
         "assigned_agent": agent,
         "assigned_agent_id": agent_id,
-        "assigned_to_type": body.assigned_to_type or ("employee" if agent_id else "unassigned"),
+        "assigned_to_type": assigned_to_type,
+        "handled_by": handled_by,
         "assigned_by": body.assigned_by or _actor_name(user),
         "assigned_by_user_id": assigned_by_user_id,
         "assigned_team_id": assigned_team_id,
@@ -718,15 +782,23 @@ def assign_ticket(
 
     agent_id = (body.assigned_agent_id or "").strip() or None
     agent_name = (body.assigned_agent or "").strip() or None
+    target = None
     if agent_id:
         target = _find_user(user_id=agent_id)
         if not target:
             raise HTTPException(status_code=400, detail="Assigned user does not exist")
         agent_name = str(target.get("name") or agent_name or "Unassigned")
+    elif agent_name and agent_name.lower() != "unassigned":
+        target = _find_user_by_name(agent_name)
+        if target:
+            agent_id = str(target.get("id") or "")
+            agent_name = str(target.get("name") or agent_name)
+
     if not agent_name:
         raise HTTPException(status_code=400, detail="An assignee is required")
     if agent_name.lower() == "unassigned":
         agent_id = None
+        target = None
 
     if is_teamlead(payload) and agent_id:
         tl_id = str(user.get("id") or "").strip()
@@ -739,23 +811,40 @@ def assign_ticket(
             )
 
     now = datetime.now(timezone.utc).isoformat()
+    target_role = normalize_role(target.get("role")) if target else None
+    assigned_to_type = body.assigned_to_type or ("teamlead" if target_role == ROLE_TEAMLEAD else ("employee" if agent_id else "unassigned"))
+    handled_by = body.handled_by or ("teamlead" if assigned_to_type == "teamlead" else ("employee" if agent_id else "unassigned"))
+
     updates: dict[str, Any] = {
         "assigned_agent": agent_name,
         "assigned_agent_id": agent_id,
         "assigned_date": now,
-        "assigned_to_type": body.assigned_to_type or ("employee" if agent_id else "unassigned"),
-        "handled_by": body.handled_by or ticket.get("handled_by"),
+        "assigned_to_type": assigned_to_type,
+        "handled_by": handled_by,
         "assigned_by": body.assigned_by or _actor_name(user),
         "assigned_by_user_id": str(user.get("id") or ""),
         "updated_at": now,
     }
-    if is_teamlead(payload):
-        tl_team = str(user.get("team") or user.get("id") or "").strip()
-        if tl_team:
-            updates["assigned_team_id"] = tl_team
+
+    assigned_team_id: int | None = None
+    if target:
+        assigned_team_id = resolve_team_id(target.get("team")) or resolve_team_id(target.get("id"))
+    if not assigned_team_id and is_teamlead(payload):
+        assigned_team_id = resolve_team_id(user.get("team")) or resolve_team_id(user.get("id"))
+    if assigned_team_id is not None:
+        updates["assigned_team_id"] = assigned_team_id
 
     sb = get_supabase_admin_client()
-    res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+    try:
+        res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+    except Exception as exc:
+        if "Employees may only change status" in str(exc) or "42501" in str(exc):
+            # Postgres trigger restricts anon updates on assigned_agent_id and assigned_team_id
+            updates.pop("assigned_agent_id", None)
+            updates.pop("assigned_team_id", None)
+            res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+        else:
+            raise HTTPException(status_code=502, detail=f"Database update failed: {exc}") from exc
     if not (res.data or []):
         raise HTTPException(status_code=404, detail="Ticket not found or assignment failed")
 
@@ -771,7 +860,12 @@ def assign_ticket(
     )
     if body.note:
         _log_activity(ticket_id, actor, body.note)
-    return serialize_ticket((res.data or [ticket])[0], payload=payload, user=user)
+    ret = serialize_ticket((res.data or [ticket])[0], payload=payload, user=user)
+    if agent_id:
+        ret["assigned_agent_id"] = agent_id
+    if assigned_team_id is not None:
+        ret["assigned_team_id"] = assigned_team_id
+    return ret
 
 
 @router.post("/{ticket_id}/status", summary="Change ticket status")

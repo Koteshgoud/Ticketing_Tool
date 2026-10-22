@@ -197,8 +197,18 @@ export const OrganizationService = {
       TEAM_LEADS.length = 0;
       EMPLOYEES.length = 0;
 
+      const leads: any[] = [];
+      const nonLeads: any[] = [];
       for (const u of dbUsers) {
         const roleLower = (u.role || '').toLowerCase();
+        if (roleLower === 'teamlead' || roleLower === 'team lead') {
+          leads.push(u);
+        } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
+          nonLeads.push(u);
+        }
+      }
+
+      for (const u of leads) {
         const rawDept = u.department || 'IT Support';
         let deptName = rawDept;
         if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
@@ -208,41 +218,54 @@ export const OrganizationService = {
         else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
 
         const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
+        const leadItem: TeamLeadItem = {
+          id: u.id,
+          employeeId: u.id,
+          name: u.name,
+          role: `${deptName} Team Lead`,
+          departmentId: deptObj.id,
+          departmentName: deptName,
+          email: u.email,
+        };
+        (leadItem as any).team = u.team;
+        TEAM_LEADS.push(leadItem);
+      }
 
-        if (roleLower === 'teamlead' || roleLower === 'team lead') {
-          const leadItem: TeamLeadItem = {
-            id: u.id,
-            employeeId: u.id,
-            name: u.name,
-            role: `${deptName} Team Lead`,
-            departmentId: deptObj.id,
-            departmentName: deptName,
-            email: u.email,
-          };
-          const existingIdx = TEAM_LEADS.findIndex(t => t.id === u.id || t.email === u.email);
-          if (existingIdx >= 0) {
-            TEAM_LEADS[existingIdx] = leadItem;
-          } else {
-            TEAM_LEADS.push(leadItem);
-          }
-        } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
-          const empItem: EmployeeItem = {
-            id: u.id,
-            employeeId: u.id,
-            name: u.name,
-            role: u.designation || 'Support Specialist',
-            teamLeadId: u.team_lead_id || u.team_lead || '',
-            departmentId: deptObj.id,
-            departmentName: deptName,
-            email: u.email,
-          };
-          const existingIdx = EMPLOYEES.findIndex(e => e.id === u.id || e.email === u.email);
-          if (existingIdx >= 0) {
-            EMPLOYEES[existingIdx] = empItem;
-          } else {
-            EMPLOYEES.push(empItem);
-          }
+      for (const u of nonLeads) {
+        const rawDept = u.department || 'IT Support';
+        let deptName = rawDept;
+        if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
+        else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
+        else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
+        else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
+        else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
+
+        const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
+        let leadId = u.team_lead_id || u.team_lead || '';
+        if (!leadId && u.team) {
+          const matchingLead = TEAM_LEADS.find(
+            (tl: any) =>
+              (tl.team && tl.team.toLowerCase() === u.team.toLowerCase()) ||
+              tl.id.toLowerCase() === u.team.toLowerCase()
+          );
+          if (matchingLead) leadId = matchingLead.id;
         }
+        if (!leadId) {
+          const sameDeptLeads = TEAM_LEADS.filter(tl => tl.departmentName.toLowerCase() === deptName.toLowerCase());
+          if (sameDeptLeads.length === 1) leadId = sameDeptLeads[0].id;
+        }
+
+        const empItem: EmployeeItem = {
+          id: u.id,
+          employeeId: u.id,
+          name: u.name,
+          role: u.designation || 'Support Specialist',
+          teamLeadId: leadId,
+          departmentId: deptObj.id,
+          departmentName: deptName,
+          email: u.email,
+        };
+        EMPLOYEES.push(empItem);
       }
     } catch (e) {
       console.warn('OrganizationService: syncFromDatabase error', e);

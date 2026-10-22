@@ -215,6 +215,55 @@ def _teams_overlap(a: Any, b: Any) -> bool:
     return bool(left & right)
 
 
+TEAM_NAME_OR_LEAD_TO_ID: dict[str, int] = {
+    # Team Alpha (ID 1 in teams table, Lead Kotesh OKL003)
+    "team alpha": 1,
+    "alpha": 1,
+    "okl003": 1,
+    "kotesh": 1,
+    "kotesh ananthu": 1,
+    "l2 support & escalations": 1,
+    # Team Beta (ID 2 in teams table, Lead Mounika OKL010)
+    "team beta": 2,
+    "beta": 2,
+    "okl010": 2,
+    "mounika": 2,
+    "frontend guild": 2,
+    # Other teams in DB
+    "cloud infrastructure": 3,
+    "talent acquisition": 4,
+    "payroll & operations": 5,
+    "digital campaigns": 6,
+    "it support team": 7,
+    "it support": 7,
+    "finance team": 8,
+    "finance": 8,
+    "hr operations team": 9,
+    "hr operations": 9,
+    "hr": 9,
+    "okl011": 9,
+    "manikanta": 9,
+    "facilities team": 10,
+    "facilities": 10,
+    "general administration team": 11,
+    "general administration": 11,
+}
+
+
+def resolve_team_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    s = str(value).strip().lower()
+    if not s or s in ("none", "null", "unassigned"):
+        return None
+    if s.isdigit():
+        return int(s)
+    return TEAM_NAME_OR_LEAD_TO_ID.get(s)
+
+
+
 def teamlead_scope(user: dict[str, Any]) -> dict[str, Any]:
     """Derive the Team Lead's managed scope from the existing user columns.
 
@@ -369,8 +418,12 @@ def ticket_visible(payload: dict[str, Any], user: dict[str, Any], ticket: dict[s
             return True
 
         # 4. Explicitly assigned to this Team Lead's team identifier
+        tl_team_id = resolve_team_id(user.get("team")) or resolve_team_id(user.get("id"))
+        ticket_team_id = resolve_team_id(ticket.get("assigned_team_id"))
+        if tl_team_id is not None and ticket_team_id is not None and tl_team_id == ticket_team_id:
+            return True
         assigned_team_id = str(ticket.get("assigned_team_id") or "").strip()
-        if assigned_team_id and (assigned_team_id == tl_id or (tl_team and assigned_team_id == tl_team)):
+        if assigned_team_id and (assigned_team_id == tl_id or (tl_team and assigned_team_id.lower() == tl_team.lower())):
             return True
         if tl_team and _scopes_overlap(tl_team, ticket.get("assigned_team_id")):
             return True
@@ -555,14 +608,27 @@ def serialize_ticket(
     if sla["due_at"]:
         result["sla_due_at"] = sla["due_at"]
     agent = _norm(ticket.get("assigned_agent"))
-    result["is_unassigned"] = agent in ("", "unassigned", "none", "null") and not ticket.get(
+    if agent and agent not in ("", "unassigned", "none", "null"):
+        matched = None
+        for u in fetch_all_users_cached():
+            uname = _norm(u.get("name"))
+            uid = _norm(u.get("id"))
+            if uname == agent or (len(uname) >= 3 and uname in agent) or uid == agent:
+                matched = u
+                break
+        if matched:
+            result["assigned_agent_id"] = str(matched.get("id") or "")
+            if not result.get("assigned_team_id"):
+                result["assigned_team_id"] = resolve_team_id(matched.get("team")) or resolve_team_id(matched.get("id"))
+
+    result["is_unassigned"] = agent in ("", "unassigned", "none", "null") and not result.get(
         "assigned_agent_id"
     )
     if payload is not None and user is not None:
-        result["is_assigned_to_me"] = _same_person(user, payload, ticket, "assigned_agent")
+        result["is_assigned_to_me"] = _same_person(user, payload, result, "assigned_agent")
         result["is_created_by_me"] = (
-            _same_person(user, payload, ticket, "employee")
-            or str(ticket.get("requester_id") or "") == str(user.get("id") or "")
+            _same_person(user, payload, result, "employee")
+            or str(result.get("requester_id") or "") == str(user.get("id") or "")
         )
     return result
 

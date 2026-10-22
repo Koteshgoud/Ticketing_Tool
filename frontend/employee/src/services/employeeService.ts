@@ -421,7 +421,8 @@ export const EmployeeService = {
         `/tickets/${encodeURIComponent(ticketId)}/status`,
         jsonInit('POST', { status: newStatus, note }),
       );
-      await this.fetchTickets();
+      this.clearCache();
+      await this.fetchTickets(true);
       window.dispatchEvent(new CustomEvent('ticket-updated'));
       return this.getTicketById(ticketId) || null;
     } catch (e) {
@@ -436,7 +437,8 @@ export const EmployeeService = {
         `/tickets/${encodeURIComponent(ticketId)}/resolve`,
         jsonInit('POST', { resolution_summary: resolutionNotes }),
       );
-      await this.fetchTickets();
+      this.clearCache();
+      await this.fetchTickets(true);
       window.dispatchEvent(new CustomEvent('ticket-updated'));
       return this.getTicketById(ticketId) || null;
     } catch (e) {
@@ -454,7 +456,8 @@ export const EmployeeService = {
           escalated_to: 'Team Lead',
         }),
       );
-      await this.fetchTickets();
+      this.clearCache();
+      await this.fetchTickets(true);
       window.dispatchEvent(new CustomEvent('ticket-updated'));
       return this.getTicketById(ticketId) || null;
     } catch (e) {
@@ -472,7 +475,8 @@ export const EmployeeService = {
           is_internal: false,
         }),
       );
-      await this.fetchTickets();
+      this.clearCache();
+      await this.fetchTickets(true);
       window.dispatchEvent(new CustomEvent('ticket-updated'));
       return this.getTicketById(ticketId) || null;
     } catch (e) {
@@ -495,7 +499,8 @@ export const EmployeeService = {
         }
       }
 
-      await this.fetchTickets();
+      this.clearCache();
+      await this.fetchTickets(true);
       window.dispatchEvent(new CustomEvent('ticket-updated'));
       return this.getTicketById(ticketId) || null;
     } catch (e) {

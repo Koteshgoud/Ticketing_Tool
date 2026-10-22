@@ -629,6 +629,7 @@ export const AdminApiService = {
   }): Promise<Ticket> {
     const sessionUser = getCurrentSessionUser();
     const primaryAssignee = data.employees && data.employees.length > 0 ? data.employees[0] : null;
+    const firstTL = data.teamLeads && data.teamLeads.length > 0 ? data.teamLeads[0] : null;
 
     const created = await apiRequest<BackendTicket>(
       '/tickets',
@@ -641,10 +642,15 @@ export const AdminApiService = {
         departments: data.departments,
         employee: sessionUser?.name || undefined,
         employee_email: sessionUser?.email || undefined,
-        assigned_agent: primaryAssignee?.name || undefined,
-        assigned_agent_id: primaryAssignee?.id || undefined,
+        assigned_agent: primaryAssignee?.name || firstTL?.name || undefined,
+        assigned_agent_id: primaryAssignee?.id || firstTL?.id || undefined,
+        assigned_to_type: primaryAssignee ? 'employee' : firstTL ? 'teamlead' : 'unassigned',
         assigned_by: data.assignedTeamLead || sessionUser?.name || undefined,
         status: 'Open',
+        team_lead_ids: (data.teamLeads || []).map((tl) => tl.id),
+        team_leads: data.teamLeads || [],
+        tagged_employee_ids: (data.employees || []).map((e) => e.id),
+        employees: data.employees || [],
       })
     );
 
