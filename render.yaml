@@ -4,8 +4,9 @@ services:
     runtime: python
     region: oregon
     plan: free
-    buildCommand: "cd backend && pip install -e ."
-    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    rootDir: backend
+    buildCommand: "sh -c \"if [ -d 'backend' ]; then cd backend; fi && pip install --upgrade pip && pip install -r requirements.txt\""
+    startCommand: "sh -c \"if [ -d 'backend' ]; then cd backend; fi && uvicorn app.main:app --host 0.0.0.0 --port $PORT\""
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.4"
@@ -14,7 +15,7 @@ services:
       - key: DEBUG
         value: "true"
       - key: ALLOWED_ORIGINS
-        value: "https://hymajagarapu.github.io,http://localhost:3000,http://localhost:4173,http://localhost:4174,http://127.0.0.1:3000,http://127.0.0.1:4173,http://127.0.0.1:4174"
+        value: "https://hymajagarapu.github.io,https://sudheshnabharadwaj.github.io,http://localhost:3000,http://localhost:4173,http://localhost:4174,http://127.0.0.1:3000,http://127.0.0.1:4173,http://127.0.0.1:4174"
       - key: SUPABASE_URL
         value: "https://fidilgpihfwfnwiugoxm.supabase.co"
       - key: SUPABASE_PROJECT_ID

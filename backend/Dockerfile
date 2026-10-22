@@ -9,8 +9,8 @@ WORKDIR /app
 # ── Stage: deps ─────────────────────────────────────────────────────────────
 FROM base AS deps
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e ".[dev]"
+COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Stage: dev (used by docker compose) ─────────────────────────────────────
 FROM deps AS dev
