@@ -37,6 +37,8 @@ jobs:
 
       - name: Build production bundle
         working-directory: frontend/admin
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || secrets.VITE_API_URL || '' }}
         run: npx vite build
 
       - name: Configure SPA routing and disable Jekyll

@@ -18,8 +18,15 @@ class Settings(BaseSettings):
     # ── App ──────────────────────────────────────────────────────────────────
     app_env: Literal["development", "staging", "production"] = "development"
     app_secret_key: str = "change-me-in-production-32-chars!!"
-    debug: bool = False
-    allowed_origins: list[str] | str = ["http://localhost:3000"]
+    allowed_origins: list[str] | str = [
+        "http://localhost:3000",
+        "http://localhost:4173",
+        "http://localhost:4174",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:4173",
+        "http://127.0.0.1:4174",
+        "https://hymajagarapu.github.io",
+    ]
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
