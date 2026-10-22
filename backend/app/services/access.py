@@ -618,8 +618,21 @@ def serialize_ticket(
                 break
         if matched:
             result["assigned_agent_id"] = str(matched.get("id") or "")
+            if not result.get("assigned_agent_email"):
+                result["assigned_agent_email"] = matched.get("email")
             if not result.get("assigned_team_id"):
                 result["assigned_team_id"] = resolve_team_id(matched.get("team")) or resolve_team_id(matched.get("id"))
+
+    emp = _norm(ticket.get("employee"))
+    if emp and emp not in ("", "unassigned", "none", "null") and not result.get("employee_id"):
+        for u in fetch_all_users_cached():
+            uname = _norm(u.get("name"))
+            uid = _norm(u.get("id"))
+            if uname == emp or (len(uname) >= 3 and uname in emp) or uid == emp:
+                result["employee_id"] = str(u.get("id") or "")
+                if not result.get("employee_email"):
+                    result["employee_email"] = u.get("email")
+                break
 
     result["is_unassigned"] = agent in ("", "unassigned", "none", "null") and not result.get(
         "assigned_agent_id"

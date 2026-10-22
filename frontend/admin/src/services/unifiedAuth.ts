@@ -42,12 +42,21 @@ const DUMMY_IDS = [
   'usr-emp-3'
 ];
 
-// Automatically purge persistent session from localStorage on load
+// Automatically purge legacy dummy data from localStorage on load
 if (typeof window !== 'undefined') {
   try {
-    localStorage.removeItem(STORAGE_KEY_SESSION);
-    localStorage.removeItem('itsm_teamlead_auth');
-    localStorage.removeItem('auth_token');
+    const sessionRaw = sessionStorage.getItem(STORAGE_KEY_SESSION) || localStorage.getItem(STORAGE_KEY_SESSION);
+    if (sessionRaw) {
+      const parsed = JSON.parse(sessionRaw);
+      if (parsed && (DUMMY_EMAILS.includes((parsed.email || '').toLowerCase()) || DUMMY_IDS.includes(parsed.id))) {
+        localStorage.removeItem(STORAGE_KEY_SESSION);
+        sessionStorage.removeItem(STORAGE_KEY_SESSION);
+        localStorage.removeItem('itsm_teamlead_auth');
+        sessionStorage.removeItem('itsm_teamlead_auth');
+        localStorage.removeItem('auth_token');
+        sessionStorage.removeItem('auth_token');
+      }
+    }
 
     const usersRaw = localStorage.getItem(STORAGE_KEY_USERS);
     if (usersRaw) {
@@ -90,13 +99,13 @@ export function savePlatformUser(user: AppUser): void {
 export function getCurrentSessionUser(): AppUser | null {
   if (typeof window === 'undefined') return null;
   try {
-    // Session is strictly tab/browser session-scoped
-    const raw = sessionStorage.getItem(STORAGE_KEY_SESSION);
+    const raw = sessionStorage.getItem(STORAGE_KEY_SESSION) || localStorage.getItem(STORAGE_KEY_SESSION);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && parsed.email && parsed.role) {
         if (DUMMY_EMAILS.includes(parsed.email.toLowerCase()) || DUMMY_IDS.includes(parsed.id)) {
           sessionStorage.removeItem(STORAGE_KEY_SESSION);
+          localStorage.removeItem(STORAGE_KEY_SESSION);
           return null;
         }
         return parsed;
@@ -111,8 +120,9 @@ export function getCurrentSessionUser(): AppUser | null {
 export function setSessionUser(user: AppUser | null): void {
   if (user) {
     sessionStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(user));
-    localStorage.removeItem(STORAGE_KEY_SESSION);
+    localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(user));
     sessionStorage.removeItem('platform_explicitly_logged_out');
+    localStorage.removeItem('platform_explicitly_logged_out');
     // Clear stale cached admin profile so this user's name and role appear correctly
     sessionStorage.removeItem('admin_profile_data');
     sessionStorage.removeItem('admin_profile_avatar');
@@ -120,8 +130,10 @@ export function setSessionUser(user: AppUser | null): void {
     localStorage.removeItem('admin_profile_avatar');
     if (user.role === 'teamlead') {
       sessionStorage.setItem('itsm_teamlead_auth', 'true');
+      localStorage.setItem('itsm_teamlead_auth', 'true');
     } else {
       sessionStorage.removeItem('itsm_teamlead_auth');
+      localStorage.removeItem('itsm_teamlead_auth');
     }
   } else {
     sessionStorage.removeItem(STORAGE_KEY_SESSION);
@@ -135,6 +147,7 @@ export function setSessionUser(user: AppUser | null): void {
     localStorage.removeItem('admin_profile_data');
     localStorage.removeItem('admin_profile_avatar');
     sessionStorage.setItem('platform_explicitly_logged_out', 'true');
+    localStorage.setItem('platform_explicitly_logged_out', 'true');
   }
 }
 

@@ -52,7 +52,6 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
         sessionStorage.removeItem('platform_current_user');
         localStorage.removeItem('platform_current_user');
       }
-      localStorage.removeItem('platform_current_user');
       const cached = sessionStorage.getItem('admin_profile_data') || localStorage.getItem('admin_profile_data');
       if (cached && (cached.toLowerCase().includes('hyma') || cached.toLowerCase().includes('admin@company.com'))) {
         sessionStorage.removeItem('admin_profile_data');

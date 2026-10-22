@@ -10,7 +10,7 @@ import {
 
 export function getEmployeeSessionUser() {
   try {
-    const raw = localStorage.getItem('platform_current_user');
+    const raw = sessionStorage.getItem('platform_current_user') || localStorage.getItem('platform_current_user');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.email) return parsed;
@@ -137,9 +137,11 @@ function mapDbTicket(row: any): EmployeeTicket {
   (t as any).employee_id = row.employee_id;
   (t as any).assigned_agent = row.assigned_agent;
   (t as any).assigned_agent_id = row.assigned_agent_id;
+  (t as any).assigned_agent_email = row.assigned_agent_email;
   (t as any).assigned_to = row.assigned_to;
   (t as any).isAssignedToMe = row.is_assigned_to_me;
   (t as any).isCreatedByMe = row.is_created_by_me;
+  (t as any).requester_id = row.requester_id;
   return t;
 }
 
@@ -206,6 +208,7 @@ export const EmployeeService = {
 
       const assigned = (t.assignedTo || t.assigned_agent || t.assigned_to || '').trim().toLowerCase();
       const agentId = (t.assigned_agent_id || '').trim().toLowerCase();
+      const agentEmail = (t.assigned_agent_email || '').trim().toLowerCase();
 
       // Skip tickets that are unassigned
       if (!assigned || assigned === 'unassigned' || assigned === 'none') return false;
@@ -215,10 +218,10 @@ export const EmployeeService = {
       if (empId && (agentId === empId || assigned === empId)) return true;
 
       // Exact match by Email
-      if (userEmail && (assigned === userEmail || t.assigned_agent_email === userEmail)) return true;
+      if (userEmail && (assigned === userEmail || agentEmail === userEmail)) return true;
 
-      // Exact match by Name
-      if (userName && assigned === userName) return true;
+      // Match by Name or substring
+      if (userName && (assigned === userName || (userName.length >= 3 && assigned.includes(userName)))) return true;
 
       return false;
     });
@@ -242,10 +245,10 @@ export const EmployeeService = {
       const name = (t.employee || t.requesterName || '').trim().toLowerCase();
       const id = (t.employee_id || t.employeeId || t.requester_id || '').trim().toLowerCase();
 
-      if (userId && id === userId) return true;
+      if (userId && (id === userId || (t.requester_id && String(t.requester_id).toLowerCase() === userId))) return true;
       if (empId && id === empId) return true;
       if (userEmail && email === userEmail) return true;
-      if (userName && name === userName) return true;
+      if (userName && (name === userName || (userName.length >= 3 && name.includes(userName)))) return true;
       return false;
     });
   },
@@ -550,15 +553,48 @@ export const EmployeeService = {
     return {
       name: user?.name || 'Employee',
       email: user?.email || 'employee@company.com',
-      employeeId: user?.id || 'EMP-001',
-      department: user?.department || 'Operations',
+      employeeId: user?.id || user?.employeeId || 'OKL004',
+      department: user?.department || 'IT Support',
       role: 'Employee',
       phone: user?.phone || '',
-      avatarUrl: user?.avatar || '',
+      avatarUrl: user?.avatar || user?.avatarUrl || '',
     };
   },
 
-  updateProfile(data: Partial<EmployeeProfile>): EmployeeProfile {
+  async fetchProfile(): Promise<EmployeeProfile> {
+    const res = await apiRequestSafe<any>('/users/profile');
+    const remote = res?.data;
+    if (remote && remote.email) {
+      const user = getEmployeeSessionUser() || {};
+      const merged = {
+        ...user,
+        id: remote.id || user.id,
+        name: remote.name || user.name,
+        email: remote.email || user.email,
+        phone: remote.phone !== undefined ? remote.phone : user.phone,
+        department: remote.department || user.department,
+        role: remote.role || user.role,
+        avatar: remote.avatar !== undefined ? remote.avatar : user.avatar,
+        avatarUrl: remote.avatar !== undefined ? remote.avatar : user.avatarUrl,
+      };
+      try {
+        localStorage.setItem('platform_current_user', JSON.stringify(merged));
+        sessionStorage.setItem('platform_current_user', JSON.stringify(merged));
+      } catch {}
+      return {
+        name: merged.name || 'Employee',
+        email: merged.email || 'employee@company.com',
+        employeeId: merged.id || 'OKL004',
+        department: merged.department || 'IT Support',
+        role: merged.role || 'Employee',
+        phone: merged.phone || '',
+        avatarUrl: merged.avatar || '',
+      };
+    }
+    return this.getProfile();
+  },
+
+  async updateProfile(data: Partial<EmployeeProfile>): Promise<EmployeeProfile> {
     const user = getEmployeeSessionUser();
     const payload: Record<string, any> = {};
     if (data.name !== undefined) payload.name = data.name;
@@ -566,22 +602,26 @@ export const EmployeeService = {
     if (data.department !== undefined) payload.department = data.department;
     if (data.avatarUrl !== undefined) payload.avatar = data.avatarUrl || '';
 
+    let remoteUser: any = null;
     if (Object.keys(payload).length > 0) {
-      void apiRequestSafe('/users/profile', jsonInit('PATCH', payload));
+      const res = await apiRequestSafe<any>('/users/profile', jsonInit('PATCH', payload));
+      remoteUser = res?.data;
     }
 
     const updatedUser = {
       ...(user || {}),
-      name: data.name !== undefined ? data.name : user?.name,
-      phone: data.phone !== undefined ? data.phone : user?.phone,
-      department: data.department !== undefined ? data.department : user?.department,
-      avatar: data.avatarUrl !== undefined ? data.avatarUrl : user?.avatar,
-      avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : user?.avatar,
+      ...(remoteUser || {}),
+      name: data.name !== undefined ? data.name : (remoteUser?.name || user?.name),
+      phone: data.phone !== undefined ? data.phone : (remoteUser?.phone || user?.phone),
+      department: data.department !== undefined ? data.department : (remoteUser?.department || user?.department),
+      avatar: data.avatarUrl !== undefined ? data.avatarUrl : (remoteUser?.avatar || user?.avatar),
+      avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : (remoteUser?.avatar || user?.avatar),
       updated_at: new Date().toISOString(),
     };
 
     try {
       localStorage.setItem('platform_current_user', JSON.stringify(updatedUser));
+      sessionStorage.setItem('platform_current_user', JSON.stringify(updatedUser));
       window.dispatchEvent(new Event('storage'));
     } catch {}
 
@@ -589,7 +629,7 @@ export const EmployeeService = {
       name: updatedUser.name || 'Employee',
       email: updatedUser.email || 'employee@company.com',
       employeeId: updatedUser.id || updatedUser.employeeId || 'OKL004',
-      department: updatedUser.department || 'Operations',
+      department: updatedUser.department || 'IT Support',
       role: updatedUser.role || 'Employee',
       phone: updatedUser.phone || '',
       avatarUrl: updatedUser.avatar || '',

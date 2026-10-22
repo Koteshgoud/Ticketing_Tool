@@ -37,7 +37,7 @@ export const LoginPage: React.FC = () => {
     setErrors({});
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: { email?: string; password?: string } = {};
 
@@ -57,9 +57,8 @@ export const LoginPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    setTimeout(async () => {
+    try {
       const result = await loginUser(email, password);
-      setIsSubmitting(false);
 
       if (!result.success || !result.user) {
         setErrors({ auth: result.error || 'Invalid credentials. Please verify your email and password.' });
@@ -74,7 +73,11 @@ export const LoginPage: React.FC = () => {
       } else {
         navigate('/employee/dashboard');
       }
-    }, 400);
+    } catch (err: any) {
+      setErrors({ auth: err?.message || 'Login failed. Please check your connection and try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

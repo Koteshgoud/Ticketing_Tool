@@ -191,7 +191,9 @@ export const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({
               EmployeeService.clearCache();
               clearBackendSession();
               localStorage.removeItem('platform_current_user');
+              sessionStorage.removeItem('platform_current_user');
               localStorage.setItem('platform_explicitly_logged_out', 'true');
+              sessionStorage.setItem('platform_explicitly_logged_out', 'true');
               window.location.hash = '#/signin';
             }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/60 transition-colors cursor-pointer"

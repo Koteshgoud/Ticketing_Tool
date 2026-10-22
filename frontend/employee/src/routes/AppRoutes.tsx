@@ -16,7 +16,7 @@ import { Profile } from '../pages/Profile';
 
 const isEmployeeAuthenticated = (): boolean => {
   try {
-    const raw = localStorage.getItem('platform_current_user');
+    const raw = sessionStorage.getItem('platform_current_user') || localStorage.getItem('platform_current_user');
     if (!raw) return false;
     const parsed = JSON.parse(raw);
     return !!(parsed && parsed.email);

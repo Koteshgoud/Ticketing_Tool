@@ -80,6 +80,7 @@ function cacheUser(user: User | null): void {
   try {
     if (user) {
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
+      sessionStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
     } else {
       localStorage.removeItem(STORAGE_USER_KEY);
       sessionStorage.removeItem(STORAGE_USER_KEY);
