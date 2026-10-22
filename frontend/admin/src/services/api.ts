@@ -23,7 +23,9 @@ import {
  */
 export const BACKEND_API_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) ||
-  'http://127.0.0.1:8000';
+  (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? 'https://ticketing-api-0dht.onrender.com'
+    : 'http://127.0.0.1:8000');
 
 export interface BackendAttachment {
   id: string;

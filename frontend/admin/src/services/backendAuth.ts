@@ -13,7 +13,9 @@ const EXPIRY_KEY = 'backend_token_expires_at';
 const RAW_BASE =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL) ||
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) ||
-  'http://127.0.0.1:8000';
+  (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? 'https://ticketing-api-0dht.onrender.com'
+    : 'http://127.0.0.1:8000');
 
 /** Normalise any configured base (with or without /api/v1) to a single API root. */
 export const API_BASE = `${RAW_BASE.replace(/\/+$/, '').replace(/\/api\/v1$/i, '')}/api/v1`;
