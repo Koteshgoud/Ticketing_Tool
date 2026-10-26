@@ -78,11 +78,20 @@ export const TicketManagementPage: React.FC = () => {
     if (activeQueueTab === 'escalated' && ((t.status || '').toLowerCase() !== 'escalated' || ['resolved', 'closed'].includes((t.status || '').toLowerCase()))) return false;
 
     // Compact filters
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      !searchQuery ||
-      t.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.requesterName.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      String(t.ticketNumber || '').toLowerCase().includes(q) ||
+      String(t.id || '').toLowerCase().includes(q) ||
+      String(t.title || '').toLowerCase().includes(q) ||
+      String(t.description || '').toLowerCase().includes(q) ||
+      String(t.department || '').toLowerCase().includes(q) ||
+      String(t.category || '').toLowerCase().includes(q) ||
+      String((t as any).subCategory || '').toLowerCase().includes(q) ||
+      String(t.requesterName || '').toLowerCase().includes(q) ||
+      String(t.assignedTo || '').toLowerCase().includes(q) ||
+      String(t.priority || '').toLowerCase().includes(q) ||
+      String(t.status || '').toLowerCase().includes(q);
 
     const matchesDept = deptFilter === 'all' || t.department.toLowerCase() === deptFilter.toLowerCase();
     const matchesPriority = priorityFilter === 'all' || t.priority.toLowerCase() === priorityFilter.toLowerCase();

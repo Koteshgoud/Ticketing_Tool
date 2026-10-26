@@ -101,17 +101,16 @@ export const AssignedTicketDetails: React.FC = () => {
     setAttachmentsLoading(true);
     setAttachmentsError(null);
 
-    // Always refresh from the backend. The synchronous cache does not contain
-    // attachment metadata, so using it alone would silently show an empty list.
-    let found = EmployeeService.getTicketById(id);
+    // Always fetch fresh ticket data directly from backend
+    const found = await EmployeeService.getTicketByIdAsync(id);
     if (found) {
       setTicket({ ...found });
       setSelectedStatus(found.status);
     } else {
-      found = await EmployeeService.getTicketByIdAsync(id);
-      if (found) {
-        setTicket({ ...found });
-        setSelectedStatus(found.status);
+      const cached = EmployeeService.getTicketById(id);
+      if (cached) {
+        setTicket({ ...cached });
+        setSelectedStatus(cached.status);
       }
     }
 
@@ -833,6 +832,7 @@ export const AssignedTicketDetails: React.FC = () => {
               <AttachmentFilePicker
                 files={modalAttachedFiles}
                 onFilesChange={setModalAttachedFiles}
+                existingAttachments={ticket.attachments}
                 label="Select Files from Computer"
                 buttonText="Browse Files from PC"
               />

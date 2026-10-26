@@ -230,9 +230,18 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
                   clearBackendSession();
                   localStorage.removeItem('platform_current_user');
                   sessionStorage.removeItem('platform_current_user');
+                  localStorage.removeItem('backend_auth_token');
+                  sessionStorage.removeItem('backend_auth_token');
+                  localStorage.removeItem('backend_refresh_token');
+                  sessionStorage.removeItem('backend_refresh_token');
+                  localStorage.removeItem('backend_token_expires_at');
+                  sessionStorage.removeItem('backend_token_expires_at');
                   localStorage.setItem('platform_explicitly_logged_out', 'true');
                   sessionStorage.setItem('platform_explicitly_logged_out', 'true');
-                  navigate('/signin');
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('platform-logout'));
+                  }
+                  navigate('/login', { replace: true });
                 }}
                 className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer font-semibold"
               >

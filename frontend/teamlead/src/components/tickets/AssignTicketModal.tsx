@@ -32,10 +32,11 @@ export const AssignTicketModal: React.FC<AssignTicketModalProps> = ({
   );
   const [priority, setPriority] = useState<TicketPriority>(ticket.priority);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isReassign = ticket.assignedAgent && ticket.assignedAgent !== 'Unassigned';
 
-  const handleAssign = (e: React.FormEvent) => {
+  const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -47,22 +48,24 @@ export const AssignTicketModal: React.FC<AssignTicketModalProps> = ({
     const selectedEmployee = activeEmployees.find((u) => u.name === selectedEmployeeName);
     const empId = selectedEmployee ? selectedEmployee.id : 'EMP-001';
 
-    // Call Context Assign
-    assignAgent(ticket.id, empId, selectedEmployeeName);
+    setIsSubmitting(true);
+    try {
+      // Call Context Assign passing priority atomically
+      await assignAgent(ticket.id, empId, selectedEmployeeName, priority);
 
-    // Update Priority if changed
-    if (priority !== ticket.priority) {
-      changePriority(ticket.id, priority);
+      const toastMsg = `Ticket ${ticket.id} assigned successfully.`;
+      if (onSuccessToast) {
+        onSuccessToast(toastMsg);
+      } else {
+        alert(toastMsg);
+      }
+
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to assign ticket.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const toastMsg = `Ticket ${ticket.id} assigned successfully.`;
-    if (onSuccessToast) {
-      onSuccessToast(toastMsg);
-    } else {
-      alert(toastMsg);
-    }
-
-    onClose();
   };
 
   return (
@@ -166,10 +169,11 @@ export const AssignTicketModal: React.FC<AssignTicketModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 py-2 px-3 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-all duration-200 cursor-pointer flex items-center justify-center space-x-1 hover:shadow-md"
+              disabled={isSubmitting}
+              className="flex-1 py-2 px-3 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-semibold text-xs rounded-lg shadow-xs transition-all duration-200 cursor-pointer flex items-center justify-center space-x-1 hover:shadow-md"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isReassign ? 'Reassign Ticket' : 'Assign Ticket'}</span>
+              <span>{isSubmitting ? 'Saving...' : isReassign ? 'Reassign Ticket' : 'Assign Ticket'}</span>
             </button>
           </div>
         </form>

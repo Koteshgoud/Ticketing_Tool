@@ -261,6 +261,7 @@ export const ticketService = {
     agentId?: string,
     assignedToType?: string,
     handledBy?: string,
+    priority?: string,
   ): Promise<boolean> => {
     try {
       await apiRequest(
@@ -271,6 +272,7 @@ export const ticketService = {
           assigned_by: assignedBy || undefined,
           assigned_to_type: assignedToType || undefined,
           handled_by: handledBy || undefined,
+          priority: priority || undefined,
         }),
       );
       invalidateTeamLeadTicketsCache();

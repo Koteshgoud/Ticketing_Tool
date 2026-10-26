@@ -264,11 +264,19 @@ export const DashboardPage: React.FC = () => {
   ).length;
 
   const filteredTickets = tickets.filter((t) => {
+    const q = filterQuery.toLowerCase().trim();
     const matchesSearch =
-      filterQuery === '' ||
-      t.ticketNumber.toLowerCase().includes(filterQuery.toLowerCase()) ||
-      t.title.toLowerCase().includes(filterQuery.toLowerCase()) ||
-      t.requesterName.toLowerCase().includes(filterQuery.toLowerCase());
+      !q ||
+      String(t.ticketNumber || '').toLowerCase().includes(q) ||
+      String(t.id || '').toLowerCase().includes(q) ||
+      String(t.title || '').toLowerCase().includes(q) ||
+      String(t.description || '').toLowerCase().includes(q) ||
+      String(t.requesterName || '').toLowerCase().includes(q) ||
+      String(t.category || '').toLowerCase().includes(q) ||
+      String(t.department || '').toLowerCase().includes(q) ||
+      String(t.assignedTo || '').toLowerCase().includes(q) ||
+      String(t.priority || '').toLowerCase().includes(q) ||
+      String(t.status || '').toLowerCase().includes(q);
 
     const matchesStatus =
       statusFilter === 'all' ||

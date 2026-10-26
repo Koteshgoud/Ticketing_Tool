@@ -36,13 +36,23 @@ export const AssignedTickets: React.FC = () => {
   }, [location.search]);
 
   const filteredTickets = (tickets || []).filter((ticket) => {
+    const q = searchTerm.toLowerCase().trim();
     const matchesSearch =
-      (ticket.ticketNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (ticket.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (ticket.department || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (ticket.assignedBy && ticket.assignedBy.toLowerCase().includes(searchTerm.toLowerCase()));
+      !q ||
+      String(ticket.ticketNumber || '').toLowerCase().includes(q) ||
+      String(ticket.id || '').toLowerCase().includes(q) ||
+      String(ticket.title || '').toLowerCase().includes(q) ||
+      String(ticket.description || '').toLowerCase().includes(q) ||
+      String(ticket.department || '').toLowerCase().includes(q) ||
+      String(ticket.category || '').toLowerCase().includes(q) ||
+      String(ticket.priority || '').toLowerCase().includes(q) ||
+      String(ticket.assignedBy || '').toLowerCase().includes(q);
 
-    const matchesStatus = statusFilter === 'ALL' || ticket.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'ALL' ||
+      ticket.status === statusFilter ||
+      (statusFilter === 'Pending' && ticket.status === 'Escalated') ||
+      (statusFilter === 'Resolved' && ticket.status === 'Closed');
 
     return matchesSearch && matchesStatus;
   });

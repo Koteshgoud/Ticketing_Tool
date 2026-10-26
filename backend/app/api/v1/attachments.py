@@ -347,6 +347,28 @@ async def upload_attachments(
             )
         prepared.append((original_name, upload.content_type or "", content))
 
+    # Check for duplicate files against existing attachments on this ticket
+    existing_records = _disk_records(ticket_id, base)
+    existing_set = {
+        (str(r.get("name") or "").strip().lower(), r.get("size_bytes"))
+        for r in existing_records
+    }
+    batch_set: set[tuple[str, int]] = set()
+
+    for original_name, _, content in prepared:
+        key = (original_name.strip().lower(), len(content))
+        if key in existing_set:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"File '{original_name}' is already attached to this ticket.",
+            )
+        if key in batch_set:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Duplicate file '{original_name}' included in the upload batch.",
+            )
+        batch_set.add(key)
+
     index = _load_metadata(ticket_id)
     results: list[dict[str, Any]] = []
 

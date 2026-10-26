@@ -136,9 +136,11 @@ function restoreSession(): Promise<RestoreResult> {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const role: UserRole = 'teamlead';
   const [users, setUsers] = useState<User[]>([]);
-  const [currentUser, setCurrentUser] = useState<User>(() => readCachedUser() || EMPTY_USER);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!getBackendToken());
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const cached = readCachedUser();
+  const hasToken = !!getBackendToken();
+  const [currentUser, setCurrentUser] = useState<User>(() => cached || EMPTY_USER);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasToken && !!cached?.email);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !cached?.email && hasToken);
 
   const loadUsers = useCallback(async () => {
     const result = await apiRequestSafe<any[]>('/team/users');
@@ -222,12 +224,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(EMPTY_USER);
     setUsers([]);
     localStorage.removeItem('itsm_teamlead_auth');
+    sessionStorage.removeItem('itsm_teamlead_auth');
     cacheUser(null);
     localStorage.setItem('platform_explicitly_logged_out', 'true');
+    sessionStorage.setItem('platform_explicitly_logged_out', 'true');
     clearBackendSession();
     if (typeof window !== 'undefined') {
-      // HashRouter: navigate with the hash, not a hash built from window.location.pathname.
-      window.location.hash = '#/login';
+      window.dispatchEvent(new CustomEvent('platform-logout'));
     }
   }, []);
 

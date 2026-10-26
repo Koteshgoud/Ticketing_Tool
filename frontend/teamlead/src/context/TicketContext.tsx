@@ -41,7 +41,7 @@ interface TicketContextType {
   createTicket: (data: CreateTicketInput) => Promise<Ticket>;
   workOnTicket: (ticketId: string) => Promise<void>;
   updateStatus: (ticketId: string, status: TicketStatus) => Promise<void>;
-  assignAgent: (ticketId: string, agentId: string, agentName: string) => Promise<void>;
+  assignAgent: (ticketId: string, agentId: string, agentName: string, priority?: TicketPriority) => Promise<void>;
   changePriority: (ticketId: string, priority: TicketPriority) => Promise<void>;
   addComment: (ticketId: string, authorName: string, authorRole: 'teamlead' | 'employee' | 'agent' | 'admin', message: string, isInternal?: boolean) => Promise<void>;
   escalateTicket: (ticketId: string, reason: string, escalatedBy: string) => Promise<void>;
@@ -193,7 +193,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     await Promise.all([loadEscalations(), loadNotifications()]);
   }, [loadEscalations, loadNotifications, refreshTicketDetail, setErrorFrom]);
 
-  const assignAgent = useCallback(async (ticketId: string, agentId: string, agentName: string) => {
+  const assignAgent = useCallback(async (ticketId: string, agentId: string, agentName: string, priority?: TicketPriority) => {
     if (!agentId || agentName === 'Unassigned') {
       setErrorFrom('Please choose a team member to assign.');
       return;
@@ -206,6 +206,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       agentId,
       isTeamLead ? 'teamlead' : 'employee',
       isTeamLead ? 'teamlead' : 'employee',
+      priority,
     );
     if (!ok) {
       setErrorFrom('Could not assign the ticket. Please try again.');

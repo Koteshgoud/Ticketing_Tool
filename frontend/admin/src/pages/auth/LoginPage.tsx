@@ -67,11 +67,11 @@ export const LoginPage: React.FC = () => {
 
       // Dynamic routing to appropriate dashboard based on user role
       if (result.user.role === 'admin') {
-        navigate('/admin/dashboard');
+        navigate('/admin/dashboard', { replace: true });
       } else if (result.user.role === 'teamlead') {
-        navigate('/teamlead/dashboard');
+        navigate('/teamlead/dashboard', { replace: true });
       } else {
-        navigate('/employee/dashboard');
+        navigate('/employee/dashboard', { replace: true });
       }
     } catch (err: any) {
       setErrors({ auth: err?.message || 'Login failed. Please check your connection and try again.' });

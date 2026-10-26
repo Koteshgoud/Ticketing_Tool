@@ -156,7 +156,7 @@ export const EmployeeDashboard: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         {/* My Tickets */}
         <div
-          onClick={() => navigate('/tickets')}
+          onClick={() => navigate('/tickets?scope=my')}
           className="bg-white border border-slate-200 hover:border-[#0284C7] rounded-xl p-3.5 shadow-2xs hover:shadow-xs cursor-pointer transition-all flex flex-col justify-between group"
         >
           <div className="flex items-start justify-between">

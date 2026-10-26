@@ -15,19 +15,28 @@ export const MyTickets: React.FC = () => {
   const searchParams = new URLSearchParams(location.search);
   const paramStatus = searchParams.get('status');
 
+  const paramScope = searchParams.get('scope');
+
   const [tickets, setTickets] = useState<EmployeeTicket[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>(paramStatus || 'ALL');
 
   const loadTickets = async () => {
     await EmployeeService.fetchTickets();
-    const list = EmployeeService.getMyTickets();
+    let list: EmployeeTicket[];
+    if (paramScope === 'my') {
+      list = EmployeeService.getMyTickets();
+    } else if (paramScope === 'assigned') {
+      list = EmployeeService.getAssignedTickets();
+    } else {
+      list = EmployeeService.getEmployeeTickets();
+    }
     setTickets(list);
   };
 
   useEffect(() => {
     loadTickets();
-  }, []);
+  }, [paramScope]);
 
   useEffect(() => {
     if (paramStatus) {
@@ -36,12 +45,22 @@ export const MyTickets: React.FC = () => {
   }, [location.search]);
 
   const filteredTickets = tickets.filter((ticket) => {
+    const q = searchTerm.toLowerCase().trim();
     const matchesSearch =
-      ticket.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.category.toLowerCase().includes(searchTerm.toLowerCase());
+      !q ||
+      String(ticket.ticketNumber || '').toLowerCase().includes(q) ||
+      String(ticket.id || '').toLowerCase().includes(q) ||
+      String(ticket.title || '').toLowerCase().includes(q) ||
+      String(ticket.description || '').toLowerCase().includes(q) ||
+      String(ticket.category || '').toLowerCase().includes(q) ||
+      String(ticket.department || '').toLowerCase().includes(q) ||
+      String(ticket.priority || '').toLowerCase().includes(q);
 
-    const matchesStatus = statusFilter === 'ALL' || ticket.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'ALL' ||
+      ticket.status === statusFilter ||
+      (statusFilter === 'Pending' && ticket.status === 'Escalated') ||
+      (statusFilter === 'Resolved' && ticket.status === 'Closed');
 
     return matchesSearch && matchesStatus;
   });
@@ -85,7 +104,7 @@ export const MyTickets: React.FC = () => {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => navigate(`/tickets/${row.id}`)}
+          onClick={() => navigate(row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`)}
           className="border-slate-200 hover:border-[#0284C7] hover:bg-sky-50 text-slate-600 hover:text-[#0284C7] text-xs font-medium"
         >
           <Eye className="w-3.5 h-3.5 mr-1" />

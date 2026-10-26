@@ -93,6 +93,10 @@ export const TeamTickets: React.FC = () => {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, priorityFilter, categoryFilter, agentFilter, slaFilter, activeTab]);
+
   // Dynamic count badges per tab
   const getTabCount = (tab: string) => {
     if (tab === 'All') return tickets.length;
@@ -130,14 +134,19 @@ export const TeamTickets: React.FC = () => {
     // SLA Filter
     if (slaFilter !== 'All' && ticket.slaStatus !== slaFilter) return false;
 
-    // Search Query (ID, Subject, Employee, Agent)
+    // Search Query (ID, Ticket Number, Subject, Description, Department, Category, Employee, Agent, Priority)
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchId = ticket.id.toLowerCase().includes(q);
-      const matchSubject = ticket.subject.toLowerCase().includes(q);
-      const matchEmployee = ticket.employee.toLowerCase().includes(q);
-      const matchAgent = ticket.assignedAgent.toLowerCase().includes(q);
-      if (!matchId && !matchSubject && !matchEmployee && !matchAgent) return false;
+      const q = searchQuery.toLowerCase().trim();
+      const matchId = String(ticket.id || '').toLowerCase().includes(q);
+      const matchNumber = String((ticket as any).ticketNumber || (ticket as any).ticket_number || '').toLowerCase().includes(q);
+      const matchSubject = String(ticket.subject || '').toLowerCase().includes(q);
+      const matchDesc = String(ticket.description || '').toLowerCase().includes(q);
+      const matchDept = String(ticket.department || '').toLowerCase().includes(q);
+      const matchCat = String(ticket.category || '').toLowerCase().includes(q);
+      const matchEmployee = String(ticket.employee || '').toLowerCase().includes(q);
+      const matchAgent = String(ticket.assignedAgent || '').toLowerCase().includes(q);
+      const matchPriority = String(ticket.priority || '').toLowerCase().includes(q);
+      if (!matchId && !matchNumber && !matchSubject && !matchDesc && !matchDept && !matchCat && !matchEmployee && !matchAgent && !matchPriority) return false;
     }
 
     return true;

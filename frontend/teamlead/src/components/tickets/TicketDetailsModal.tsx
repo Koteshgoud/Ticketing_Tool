@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Ticket, TicketPriority, TicketStatus } from '../../types/ticket';
 import { StatusBadge } from '../common/StatusBadge';
 import { PriorityBadge } from '../common/PriorityBadge';
@@ -22,6 +22,8 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';
 import { PRIORITIES, STATUSES } from '../../utils/constants';
+import { ticketService } from '../../services/ticketService';
+import { authenticatedFetch, API_BASE } from '../../services/backendAuth';
 
 interface TicketDetailsModalProps {
   ticket: Ticket | null;
@@ -47,18 +49,40 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
   const [escalationModalOpen, setEscalationModalOpen] = useState(false);
   const [escalationReasonInput, setEscalationReasonInput] = useState('');
   const [previewAttachment, setPreviewAttachment] = useState<{ name: string; size?: string } | null>(null);
+  const [modalAttachments, setModalAttachments] = useState<any[]>(ticket.attachments || []);
 
-  const handleDownloadAttachment = (attName: string) => {
-    const content = `Enterprise Ticketing System\nAttachment: ${attName}\nTicket ID: ${ticket.id}\nSubject: ${ticket.subject}\nDownloaded At: ${new Date().toISOString()}\n`;
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attName.includes('.') ? attName : `${attName}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  useEffect(() => {
+    let active = true;
+    if (ticket.id) {
+      ticketService.getAttachmentsDetailed(ticket.id).then((res) => {
+        if (active && res.attachments && res.attachments.length > 0) {
+          setModalAttachments(res.attachments);
+        }
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [ticket.id]);
+
+  const handleDownloadAttachment = async (attName: string, attUrl?: string) => {
+    const cleanName = attName.includes(' (') ? attName.split(' (')[0] : attName;
+    const url = attUrl || `${API_BASE}/tickets/${ticket.id}/attachments/${encodeURIComponent(cleanName)}/download`;
+    try {
+      const res = await authenticatedFetch(url);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = cleanName.includes('.') ? cleanName : `${cleanName}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      console.warn('Failed to download attachment:', e);
+    }
   };
 
   const handlePostComment = (e: React.FormEvent) => {
@@ -253,10 +277,10 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
             {/* Tab 3: Attachments */}
             {activeTab === 'attachments' && (
               <div className="space-y-2">
-                {ticket.attachments?.length === 0 ? (
+                {modalAttachments.length === 0 ? (
                   <p className="text-center text-xs text-slate-400 py-6">No attachments uploaded.</p>
                 ) : (
-                  ticket.attachments?.map((att, i) => (
+                  modalAttachments.map((att: any, i: number) => (
                     <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <FileText className="w-4 h-4 text-sky-600" />
@@ -276,7 +300,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDownloadAttachment(att.name)}
+                          onClick={() => handleDownloadAttachment(att.name, att.url)}
                           className="px-2 py-1 text-[11px] font-semibold text-sky-600 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Download className="w-3 h-3 text-sky-600" />

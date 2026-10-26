@@ -95,6 +95,7 @@ class AssignRequest(BaseModel):
     assigned_to_type: str | None = None
     handled_by: str | None = None
     assigned_by: str | None = None
+    priority: str | None = None
     note: str | None = None
 
 
@@ -232,17 +233,19 @@ def _find_user_by_name(name: str | None) -> dict[str, Any] | None:
 
 
 
-def _sla_due(priority: str | None, explicit: str | None = None) -> str:
+def _sla_due(priority: str | None, created_at: Any = None, explicit: str | None = None) -> str:
     from app.services.access import SLA_HOURS, _parse_dt
+    from datetime import timedelta
 
     if explicit:
         parsed = _parse_dt(explicit)
         if parsed:
             return parsed.isoformat()
     hours = SLA_HOURS.get((priority or "medium").strip().lower(), 24)
-    from datetime import timedelta
-
-    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    base_dt = _parse_dt(created_at) if created_at else None
+    if not base_dt:
+        base_dt = datetime.now(timezone.utc)
+    return (base_dt + timedelta(hours=hours)).isoformat()
 
 
 def _new_ticket_id() -> str:
@@ -304,9 +307,17 @@ def list_tickets(
             t
             for t in tickets
             if needle in str(t.get("id") or "").lower()
+            or needle in str(t.get("ticket_number") or "").lower()
             or needle in str(t.get("subject") or "").lower()
+            or needle in str(t.get("description") or "").lower()
+            or needle in str(t.get("department") or "").lower()
+            or needle in str(t.get("category") or "").lower()
+            or needle in str(t.get("sub_category") or "").lower()
+            or needle in str(t.get("priority") or "").lower()
+            or needle in str(t.get("status") or "").lower()
             or needle in str(t.get("employee") or "").lower()
             or needle in str(t.get("employee_email") or "").lower()
+            or needle in str(t.get("assigned_agent") or "").lower()
         ]
     return tickets
 
@@ -581,7 +592,7 @@ def create_ticket(
         "assigned_by": body.assigned_by or _actor_name(user),
         "assigned_by_user_id": assigned_by_user_id,
         "assigned_team_id": assigned_team_id,
-        "sla_due_at": _sla_due(body.priority, body.sla_due_at),
+        "sla_due_at": _sla_due(body.priority, created_at=now, explicit=body.sla_due_at),
         "created_at": now,
         "updated_at": now,
     }
@@ -663,7 +674,7 @@ def update_ticket(
             raise HTTPException(status_code=400, detail="Assigned user does not exist")
         updates.setdefault("assigned_agent", target.get("name") or "Unassigned")
     if "priority" in updates and "sla_due_at" not in updates:
-        updates["sla_due_at"] = _sla_due(updates["priority"], ticket.get("sla_due_at"))
+        updates["sla_due_at"] = _sla_due(updates["priority"], created_at=ticket.get("created_at"))
     if "status" in updates:
         new_status = str(updates["status"]).strip()
         if new_status.lower() == "resolved":
@@ -825,6 +836,10 @@ def assign_ticket(
         "assigned_by_user_id": str(user.get("id") or ""),
         "updated_at": now,
     }
+    if body.priority:
+        norm_priority = body.priority.strip()
+        updates["priority"] = norm_priority
+        updates["sla_due_at"] = _sla_due(norm_priority, created_at=ticket.get("created_at"))
 
     assigned_team_id: int | None = None
     if target:
@@ -851,6 +866,8 @@ def assign_ticket(
     invalidate_tickets_cache()
     actor = _actor_name(user)
     _log_activity(ticket_id, actor, f"Assigned to {agent_name}")
+    if body.priority and body.priority.strip().lower() != str(ticket.get("priority") or "").lower():
+        _log_activity(ticket_id, actor, f"Priority changed to {body.priority.strip()}")
     _notify(
         title=f"Ticket Assigned: {ticket_id}",
         message=f"{actor} assigned \"{ticket.get('subject')}\" to {agent_name}.",

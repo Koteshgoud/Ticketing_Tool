@@ -45,12 +45,19 @@ export const AllTicketsPage: React.FC = () => {
     let result = tickets;
 
     if (search.trim()) {
-      const q = search.toLowerCase();
+      const q = search.toLowerCase().trim();
       result = result.filter(
-        t => t.ticketNumber.toLowerCase().includes(q) ||
-             t.title.toLowerCase().includes(q) ||
-             t.requesterName.toLowerCase().includes(q) ||
-             t.category.toLowerCase().includes(q)
+        t =>
+          String(t.ticketNumber || '').toLowerCase().includes(q) ||
+          String(t.id || '').toLowerCase().includes(q) ||
+          String(t.title || '').toLowerCase().includes(q) ||
+          String(t.description || '').toLowerCase().includes(q) ||
+          String(t.requesterName || '').toLowerCase().includes(q) ||
+          String(t.category || '').toLowerCase().includes(q) ||
+          String(t.department || '').toLowerCase().includes(q) ||
+          String(t.assignedTo || '').toLowerCase().includes(q) ||
+          String(t.priority || '').toLowerCase().includes(q) ||
+          String(t.status || '').toLowerCase().includes(q)
       );
     }
 

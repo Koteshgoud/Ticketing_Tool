@@ -547,6 +547,14 @@ def compute_sla(ticket: dict[str, Any], now: datetime | None = None) -> dict[str
     deadline = sla_deadline(ticket)
 
     if status in ("resolved", "closed"):
+        resolved_at = _parse_dt(ticket.get("resolved_at") or ticket.get("closed_at") or ticket.get("updated_at"))
+        if deadline and resolved_at and resolved_at > deadline:
+            return {
+                "status": "SLA Breached",
+                "state": "breached",
+                "remaining": "Breached prior to resolution",
+                "due_at": deadline.isoformat(),
+            }
         return {
             "status": "Within SLA",
             "state": "normal",
@@ -643,6 +651,21 @@ def serialize_ticket(
             _same_person(user, payload, result, "employee")
             or str(result.get("requester_id") or "") == str(user.get("id") or "")
         )
+
+    tid = str(ticket.get("id") or "")
+    if tid:
+        try:
+            from app.api.v1.attachments import _disk_records
+            disk_atts = _disk_records(tid, "")
+            result["attachments"] = disk_atts
+            result["attachments_count"] = len(disk_atts)
+        except Exception:
+            result["attachments"] = ticket.get("attachments") or []
+            result["attachments_count"] = len(result["attachments"])
+    else:
+        result["attachments"] = ticket.get("attachments") or []
+        result["attachments_count"] = len(result["attachments"])
+
     return result
 
 

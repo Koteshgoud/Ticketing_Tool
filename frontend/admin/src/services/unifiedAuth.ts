@@ -1,4 +1,4 @@
-import { clearBackendSession, loginBackend, registerBackend } from './backendAuth';
+import { clearBackendSession, getBackendToken, loginBackend, registerBackend } from './backendAuth';
 
 export type UserRoleType = 'admin' | 'teamlead' | 'employee';
 
@@ -99,19 +99,41 @@ export function savePlatformUser(user: AppUser): void {
 export function getCurrentSessionUser(): AppUser | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY_SESSION) || localStorage.getItem(STORAGE_KEY_SESSION);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.email && parsed.role) {
-        if (DUMMY_EMAILS.includes(parsed.email.toLowerCase()) || DUMMY_IDS.includes(parsed.id)) {
-          sessionStorage.removeItem(STORAGE_KEY_SESSION);
-          localStorage.removeItem(STORAGE_KEY_SESSION);
-          return null;
-        }
-        return parsed;
-      }
+    // If explicitly logged out, never synthesize or return a user
+    const explicitlyLoggedOut =
+      sessionStorage.getItem('platform_explicitly_logged_out') === 'true' ||
+      localStorage.getItem('platform_explicitly_logged_out') === 'true';
+    if (explicitlyLoggedOut) {
+      return null;
     }
-    return null;
+
+    const raw = sessionStorage.getItem(STORAGE_KEY_SESSION) || localStorage.getItem(STORAGE_KEY_SESSION);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.email || !parsed.role) {
+      return null;
+    }
+
+    if (DUMMY_EMAILS.includes(parsed.email.toLowerCase()) || DUMMY_IDS.includes(parsed.id)) {
+      sessionStorage.removeItem(STORAGE_KEY_SESSION);
+      localStorage.removeItem(STORAGE_KEY_SESSION);
+      return null;
+    }
+
+    // A valid session MUST have either a valid backend access token or a refresh token
+    const token = getBackendToken();
+    const refreshToken =
+      localStorage.getItem('backend_refresh_token') || sessionStorage.getItem('backend_refresh_token');
+
+    if (!token && !refreshToken) {
+      // Session has expired or tokens are missing
+      sessionStorage.removeItem(STORAGE_KEY_SESSION);
+      localStorage.removeItem(STORAGE_KEY_SESSION);
+      return null;
+    }
+
+    return parsed;
   } catch {
     return null;
   }
@@ -135,19 +157,31 @@ export function setSessionUser(user: AppUser | null): void {
       sessionStorage.removeItem('itsm_teamlead_auth');
       localStorage.removeItem('itsm_teamlead_auth');
     }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('platform-auth-changed', { detail: { user } }));
+    }
   } else {
     sessionStorage.removeItem(STORAGE_KEY_SESSION);
     sessionStorage.removeItem('itsm_teamlead_auth');
     sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('backend_auth_token');
+    sessionStorage.removeItem('backend_refresh_token');
+    sessionStorage.removeItem('backend_token_expires_at');
     sessionStorage.removeItem('admin_profile_data');
     sessionStorage.removeItem('admin_profile_avatar');
     localStorage.removeItem(STORAGE_KEY_SESSION);
     localStorage.removeItem('itsm_teamlead_auth');
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('backend_auth_token');
+    localStorage.removeItem('backend_refresh_token');
+    localStorage.removeItem('backend_token_expires_at');
     localStorage.removeItem('admin_profile_data');
     localStorage.removeItem('admin_profile_avatar');
     sessionStorage.setItem('platform_explicitly_logged_out', 'true');
     localStorage.setItem('platform_explicitly_logged_out', 'true');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('platform-auth-changed', { detail: { user: null } }));
+    }
   }
 }
 
@@ -181,6 +215,9 @@ export async function loginUser(email: string, password?: string): Promise<{ suc
 export function logoutUser(): void {
   setSessionUser(null);
   clearBackendSession();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('platform-logout'));
+  }
 }
 
 export interface RegisterUserData {

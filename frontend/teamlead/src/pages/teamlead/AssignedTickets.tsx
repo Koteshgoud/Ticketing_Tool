@@ -59,6 +59,10 @@ export const AssignedTickets: React.FC = () => {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, priorityFilter, categoryFilter, agentFilter, slaFilter, activeTab]);
+
   const [assignModalTicket, setAssignModalTicket] = useState<Ticket | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -91,11 +95,17 @@ export const AssignedTickets: React.FC = () => {
     if (slaFilter !== 'All' && ticket.slaStatus !== slaFilter) return false;
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchId = (ticket.id || '').toLowerCase().includes(q);
-      const matchSubject = (ticket.subject || '').toLowerCase().includes(q);
-      const matchDept = (ticket.department || '').toLowerCase().includes(q);
-      if (!matchId && !matchSubject && !matchDept) return false;
+      const q = searchQuery.toLowerCase().trim();
+      const matchId = String(ticket.id || '').toLowerCase().includes(q);
+      const matchNumber = String((ticket as any).ticketNumber || (ticket as any).ticket_number || '').toLowerCase().includes(q);
+      const matchSubject = String(ticket.subject || '').toLowerCase().includes(q);
+      const matchDesc = String(ticket.description || '').toLowerCase().includes(q);
+      const matchDept = String(ticket.department || '').toLowerCase().includes(q);
+      const matchCat = String(ticket.category || '').toLowerCase().includes(q);
+      const matchEmployee = String(ticket.employee || '').toLowerCase().includes(q);
+      const matchAgent = String(ticket.assignedAgent || '').toLowerCase().includes(q);
+      const matchPriority = String(ticket.priority || '').toLowerCase().includes(q);
+      if (!matchId && !matchNumber && !matchSubject && !matchDesc && !matchDept && !matchCat && !matchEmployee && !matchAgent && !matchPriority) return false;
     }
 
     return true;

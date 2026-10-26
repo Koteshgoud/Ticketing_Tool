@@ -712,6 +712,7 @@ export const AdminTicketDetailsPage: React.FC = () => {
               <AttachmentFilePicker
                 files={modalAttachedFiles}
                 onFilesChange={setModalAttachedFiles}
+                existingAttachments={ticket.attachments}
                 label="Select Local Computer Files"
                 buttonText="Browse Files from PC"
               />

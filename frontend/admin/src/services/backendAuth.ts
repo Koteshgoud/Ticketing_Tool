@@ -255,6 +255,47 @@ export async function registerBackend(payload: {
   }
 }
 
+/** Trigger clean session expiration: wipe storage, dispatch events, and redirect to login if on protected route. */
+export function handleSessionExpiration(): void {
+  clearBackendSession();
+  try {
+    sessionStorage.removeItem('platform_current_user');
+    localStorage.removeItem('platform_current_user');
+    sessionStorage.removeItem('itsm_teamlead_auth');
+    localStorage.removeItem('itsm_teamlead_auth');
+    sessionStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_token');
+    sessionStorage.setItem('platform_explicitly_logged_out', 'true');
+    localStorage.setItem('platform_explicitly_logged_out', 'true');
+  } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('session-expired'));
+    window.dispatchEvent(new CustomEvent('platform-auth-changed', { detail: { user: null } }));
+
+    const hash = window.location.hash || '';
+    const isHashRouter = hash.startsWith('#/');
+    const path = isHashRouter ? hash.slice(1) : window.location.pathname;
+    const isAuthRoute =
+      path === '/login' ||
+      path.startsWith('/login') ||
+      path === '/signin' ||
+      path.startsWith('/signin') ||
+      path.includes('signup') ||
+      path.includes('password') ||
+      path.includes('register') ||
+      path === '' ||
+      path === '/';
+
+    if (!isAuthRoute) {
+      if (isHashRouter) {
+        window.location.replace('#/login');
+      } else {
+        window.location.replace('/login');
+      }
+    }
+  }
+}
+
 /** Use the long-lived refresh token to obtain a new access token. */
 export async function refreshBackendSession(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
@@ -269,7 +310,9 @@ export async function refreshBackendSession(): Promise<boolean> {
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) clearBackendSession();
+        if (res.status === 401 || res.status === 403) {
+          handleSessionExpiration();
+        }
         return false;
       }
       const data = await res.json();
@@ -312,6 +355,8 @@ export async function authenticatedFetch(input: RequestInfo | URL, init?: Reques
     const renewed = await refreshBackendSession();
     if (renewed) {
       res = await doFetch();
+    } else {
+      handleSessionExpiration();
     }
   }
   return res;
