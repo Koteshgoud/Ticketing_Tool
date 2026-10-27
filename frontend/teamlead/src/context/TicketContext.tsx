@@ -5,6 +5,7 @@ import { NotificationItem } from '../types/notification';
 import { ticketService } from '../services/ticketService';
 import { teamLeadService } from '../services/teamLeadService';
 import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../services/supabaseClient';
 
 interface CreateTicketInput {
   subject: string;
@@ -106,7 +107,47 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setError(null);
       return;
     }
+
     void refresh();
+
+    // 1. Supabase Realtime Channel
+    const channel = supabase
+      .channel(`teamlead-realtime-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        void refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_activities' }, () => {
+        void refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, () => {
+        void refresh();
+      })
+      .subscribe();
+
+    // 2. Controlled Polling Fallback (7 seconds, active when tab is visible)
+    const pollInterval = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void refresh();
+      }
+    }, 7000);
+
+    // 3. Local/Cross-tab update listener
+    const handleTicketUpdated = () => {
+      void refresh();
+    };
+    window.addEventListener('ticket-updated', handleTicketUpdated);
+    window.addEventListener('storage', handleTicketUpdated);
+
+    return () => {
+      window.clearInterval(pollInterval);
+      window.removeEventListener('ticket-updated', handleTicketUpdated);
+      window.removeEventListener('storage', handleTicketUpdated);
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // channel unsubscribe fallback
+      }
+    };
   }, [userId, refresh]);
 
   const mergeTicket = useCallback((updated: Ticket) => {
@@ -194,18 +235,15 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [loadEscalations, loadNotifications, refreshTicketDetail, setErrorFrom]);
 
   const assignAgent = useCallback(async (ticketId: string, agentId: string, agentName: string, priority?: TicketPriority) => {
-    if (!agentId || agentName === 'Unassigned') {
-      setErrorFrom('Please choose a team member to assign.');
-      return;
-    }
-    const isTeamLead = agentId === currentUserId;
+    const isUnassign = !agentId || agentName === 'Unassigned';
+    const isTeamLead = !isUnassign && agentId === currentUserId;
     const ok = await ticketService.assignAgent(
       ticketId,
-      agentName,
+      isUnassign ? 'Unassigned' : agentName,
       `${currentUserName} (Team Lead)`,
-      agentId,
-      isTeamLead ? 'teamlead' : 'employee',
-      isTeamLead ? 'teamlead' : 'employee',
+      isUnassign ? undefined : agentId,
+      isUnassign ? 'unassigned' : (isTeamLead ? 'teamlead' : 'employee'),
+      isUnassign ? 'unassigned' : (isTeamLead ? 'teamlead' : 'employee'),
       priority,
     );
     if (!ok) {
@@ -214,6 +252,9 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     await refreshTicketDetail(ticketId);
     await loadEscalations();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: ticketId } }));
+    }
   }, [currentUserId, currentUserName, loadEscalations, refreshTicketDetail, setErrorFrom]);
 
   const changePriority = useCallback(async (ticketId: string, priority: TicketPriority) => {
@@ -223,6 +264,9 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     await refreshTicketDetail(ticketId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: ticketId } }));
+    }
   }, [refreshTicketDetail, setErrorFrom]);
 
   const addComment = useCallback(async (

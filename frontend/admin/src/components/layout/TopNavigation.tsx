@@ -214,9 +214,25 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('search');
+    if (q !== null) {
+      setSearchValue(q);
+    }
+  }, [location.search]);
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchValue(e.target.value);
-    if (onSearch) onSearch(e.target.value);
+    const query = e.target.value;
+    setSearchValue(query);
+    if (onSearch) onSearch(query);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navigate(`/admin/workspace/all?search=${encodeURIComponent(searchValue)}`);
+    }
   };
 
   return (
@@ -243,7 +259,8 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
             type="text"
             value={searchValue}
             onChange={handleSearchChange}
-            placeholder="Search tickets, users, settings..."
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search tickets by ID, title, requester, assignee..."
             className="w-full bg-slate-100/70 border border-slate-200/80 rounded-full pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all"
           />
         </div>

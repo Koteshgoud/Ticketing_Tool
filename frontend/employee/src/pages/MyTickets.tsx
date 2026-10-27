@@ -14,11 +14,11 @@ export const MyTickets: React.FC = () => {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const paramStatus = searchParams.get('status');
-
   const paramScope = searchParams.get('scope');
+  const paramSearch = searchParams.get('search') || searchParams.get('q') || '';
 
   const [tickets, setTickets] = useState<EmployeeTicket[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(paramSearch);
   const [statusFilter, setStatusFilter] = useState<string>(paramStatus || 'ALL');
 
   const loadTickets = async () => {
@@ -36,13 +36,37 @@ export const MyTickets: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
+    const handleTicketUpdated = () => {
+      loadTickets();
+    };
+    window.addEventListener('ticket-updated', handleTicketUpdated);
+    window.addEventListener('storage', handleTicketUpdated);
+    return () => {
+      window.removeEventListener('ticket-updated', handleTicketUpdated);
+      window.removeEventListener('storage', handleTicketUpdated);
+    };
   }, [paramScope]);
 
   useEffect(() => {
     if (paramStatus) {
       setStatusFilter(paramStatus);
     }
-  }, [location.search]);
+  }, [paramStatus]);
+
+  useEffect(() => {
+    setSearchTerm(paramSearch);
+  }, [paramSearch]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    const nextParams = new URLSearchParams(location.search);
+    if (val.trim()) {
+      nextParams.set('search', val);
+    } else {
+      nextParams.delete('search');
+    }
+    navigate(`?${nextParams.toString()}`, { replace: true });
+  };
 
   const filteredTickets = tickets.filter((ticket) => {
     const q = searchTerm.toLowerCase().trim();
@@ -54,7 +78,10 @@ export const MyTickets: React.FC = () => {
       String(ticket.description || '').toLowerCase().includes(q) ||
       String(ticket.category || '').toLowerCase().includes(q) ||
       String(ticket.department || '').toLowerCase().includes(q) ||
-      String(ticket.priority || '').toLowerCase().includes(q);
+      String(ticket.priority || '').toLowerCase().includes(q) ||
+      String(ticket.status || '').toLowerCase().includes(q) ||
+      String((ticket as any).employee || (ticket as any).requesterName || '').toLowerCase().includes(q) ||
+      String((ticket as any).assignedAgent || ticket.assignedTo || '').toLowerCase().includes(q);
 
     const matchesStatus =
       statusFilter === 'ALL' ||
@@ -156,9 +183,9 @@ export const MyTickets: React.FC = () => {
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="w-full md:w-80">
           <Input
-            placeholder="Search ticket ID, subject or category..."
+            placeholder="Search ticket ID, subject, requester, assignee..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             icon={<Search className="w-4 h-4 text-slate-400" />}
           />
         </div>

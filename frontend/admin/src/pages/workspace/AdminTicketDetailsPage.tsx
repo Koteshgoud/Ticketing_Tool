@@ -45,6 +45,10 @@ export const AdminTicketDetailsPage: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus>('In Progress');
   const [statusNote, setStatusNote] = useState('');
 
+  const [showPriorityModal, setShowPriorityModal] = useState(false);
+  const [selectedPriority, setSelectedPriority] = useState<any>('Medium');
+  const [priorityNote, setPriorityNote] = useState('');
+
   const [showAttachModal, setShowAttachModal] = useState(false);
   const [modalAttachedFiles, setModalAttachedFiles] = useState<AttachedFile[]>([]);
 
@@ -67,6 +71,7 @@ export const AdminTicketDetailsPage: React.FC = () => {
     if (found) {
       setTicket({ ...found });
       setSelectedStatus(found.status);
+      setSelectedPriority(found.priority);
     }
     setIsLoading(false);
   };
@@ -126,6 +131,15 @@ export const AdminTicketDetailsPage: React.FC = () => {
 
   useEffect(() => {
     loadTicket();
+    const handleUpdate = () => {
+      loadTicket();
+    };
+    window.addEventListener('ticket-updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ticket-updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [id]);
 
   useEffect(() => {
@@ -246,6 +260,19 @@ export const AdminTicketDetailsPage: React.FC = () => {
     }
   };
 
+  const handlePriorityUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+    const note = priorityNote.trim() || `Priority changed to ${selectedPriority}`;
+    const updated = await AdminApiService.updateTicket(id, { priority: selectedPriority }, note);
+    if (updated) {
+      setTicket({ ...updated });
+      setShowPriorityModal(false);
+      setPriorityNote('');
+      setToastMessage(`Ticket priority updated to ${selectedPriority}.`);
+    }
+  };
+
   const handleAddCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !newComment.trim()) return;
@@ -328,6 +355,18 @@ export const AdminTicketDetailsPage: React.FC = () => {
             className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
           >
             Update Status
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSelectedPriority(ticket.priority);
+              setShowPriorityModal(true);
+            }}
+            className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
+          >
+            Update Priority
           </Button>
 
           <Button
@@ -696,6 +735,57 @@ export const AdminTicketDetailsPage: React.FC = () => {
                 </Button>
                 <Button type="submit" variant="primary" className="bg-[#0284C7] text-white">
                   Save Status
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Priority Update Modal */}
+      {showPriorityModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 font-sans space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Update Ticket Priority</h3>
+            <form onSubmit={handlePriorityUpdateSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Priority</label>
+                <Select
+                  value={selectedPriority}
+                  onChange={(e) => setSelectedPriority(e.target.value as any)}
+                  options={[
+                    { value: 'Low', label: 'Low' },
+                    { value: 'Medium', label: 'Medium' },
+                    { value: 'High', label: 'High' },
+                    { value: 'Urgent', label: 'Urgent' },
+                  ]}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Priority Note / Activity Reason (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={priorityNote}
+                  onChange={(e) => setPriorityNote(e.target.value)}
+                  placeholder="Explain why priority was changed..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-[#0284C7]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowPriorityModal(false)}
+                  className="border-slate-200 text-slate-600"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" className="bg-[#0284C7] text-white">
+                  Save Priority
                 </Button>
               </div>
             </form>

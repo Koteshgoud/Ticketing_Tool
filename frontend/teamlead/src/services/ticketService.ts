@@ -112,6 +112,10 @@ const TICKETS_CACHE_TTL = 3000;
 export function invalidateTeamLeadTicketsCache(): void {
   _ticketsCache = null;
   _lastTicketsTime = 0;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ticket-updated'));
+    window.dispatchEvent(new Event('storage'));
+  }
 }
 
 export const ticketService = {

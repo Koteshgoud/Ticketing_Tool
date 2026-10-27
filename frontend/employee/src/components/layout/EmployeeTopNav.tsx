@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
   Bell,
@@ -24,6 +24,7 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
   onToggleMobileSidebar,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchValue, setSearchValue] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -57,10 +58,25 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('search');
+    if (q !== null) {
+      setSearchValue(q);
+    }
+  }, [location.search]);
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchValue(query);
     if (onSearch) onSearch(query);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navigate(`/employee/tickets?search=${encodeURIComponent(searchValue)}`);
+    }
   };
 
   const handleMarkAllAsRead = () => {
@@ -94,7 +110,8 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
             type="text"
             value={searchValue}
             onChange={handleSearchChange}
-            placeholder="Search tickets, priority, status..."
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search tickets by ID, subject, requester, assignee..."
             className="w-full bg-slate-100/70 border border-slate-200/80 rounded-full pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all"
           />
         </div>

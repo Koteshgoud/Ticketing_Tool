@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { EmployeeTopNav } from './EmployeeTopNav';
 import { EmployeeSidebar } from './EmployeeSidebar';
 import { EmployeeService } from '../../services/employeeService';
+import { supabase } from '../../services/supabaseClient';
 
 export const EmployeeLayout: React.FC = () => {
+  const navigate = useNavigate();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [assignedCount, setAssignedCount] = useState<number>(() => {
     return EmployeeService.getAssignedTickets().length;
@@ -12,19 +14,55 @@ export const EmployeeLayout: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const updateAssignedCount = async () => {
-      await EmployeeService.fetchTickets();
+    const updateAssignedCount = async (notify = false) => {
+      await EmployeeService.fetchTickets(true);
       if (!cancelled) {
         setAssignedCount(EmployeeService.getAssignedTickets().length);
+        if (notify) {
+          window.dispatchEvent(new CustomEvent('ticket-updated'));
+        }
       }
     };
-    updateAssignedCount();
-    window.addEventListener('ticket-updated', updateAssignedCount);
-    window.addEventListener('storage', updateAssignedCount);
+
+    updateAssignedCount(false);
+
+    // 1. Supabase Realtime Channel
+    const channel = supabase
+      .channel('employee-realtime-tickets')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        void updateAssignedCount(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_activities' }, () => {
+        void updateAssignedCount(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, () => {
+        void updateAssignedCount(true);
+      })
+      .subscribe();
+
+    // 2. Controlled Polling Fallback (7 seconds, active when tab is visible)
+    const pollInterval = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void updateAssignedCount(true);
+      }
+    }, 7000);
+
+    const onLocalUpdated = () => {
+      void updateAssignedCount(false);
+    };
+    window.addEventListener('ticket-updated', onLocalUpdated);
+    window.addEventListener('storage', onLocalUpdated);
+
     return () => {
       cancelled = true;
-      window.removeEventListener('ticket-updated', updateAssignedCount);
-      window.removeEventListener('storage', updateAssignedCount);
+      window.clearInterval(pollInterval);
+      window.removeEventListener('ticket-updated', onLocalUpdated);
+      window.removeEventListener('storage', onLocalUpdated);
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        // channel unsubscribe fallback
+      }
     };
   }, []);
 
@@ -41,6 +79,9 @@ export const EmployeeLayout: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <EmployeeTopNav
           onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+          onSearch={(query) => {
+            navigate(`/employee/tickets?search=${encodeURIComponent(query)}`);
+          }}
         />
 
         {/* Dynamic Page Content Area */}

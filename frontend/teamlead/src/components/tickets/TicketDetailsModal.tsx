@@ -41,7 +41,32 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
     addComment,
     escalateTicket,
     resolveTicket,
+    setSelectedTicket,
   } = useTickets();
+
+  const [currentTicket, setCurrentTicket] = useState<Ticket>(ticket);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (ticket) setCurrentTicket(ticket);
+    const handleTicketUpdated = async () => {
+      if (ticket?.id) {
+        const fresh = await ticketService.getTicketById(ticket.id);
+        if (fresh) setCurrentTicket(fresh);
+      }
+    };
+    window.addEventListener('ticket-updated', handleTicketUpdated);
+    window.addEventListener('storage', handleTicketUpdated);
+    return () => {
+      window.removeEventListener('ticket-updated', handleTicketUpdated);
+      window.removeEventListener('storage', handleTicketUpdated);
+    };
+  }, [ticket]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const [activeTab, setActiveTab] = useState<'conversation' | 'history' | 'attachments'>('conversation');
   const [newComment, setNewComment] = useState('');
@@ -53,8 +78,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
 
   useEffect(() => {
     let active = true;
-    if (ticket.id) {
-      ticketService.getAttachmentsDetailed(ticket.id).then((res) => {
+    if (currentTicket.id) {
+      ticketService.getAttachmentsDetailed(currentTicket.id).then((res) => {
         if (active && res.attachments && res.attachments.length > 0) {
           setModalAttachments(res.attachments);
         }
@@ -63,7 +88,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
     return () => {
       active = false;
     };
-  }, [ticket.id]);
+  }, [currentTicket.id]);
 
   const handleDownloadAttachment = async (attName: string, attUrl?: string) => {
     const cleanName = attName.includes(' (') ? attName.split(' (')[0] : attName;
@@ -110,21 +135,37 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        {/* Toast Notification */}
+        {toastMessage && (
+          <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 text-xs font-semibold text-emerald-800 flex items-center justify-between animate-in fade-in duration-150">
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {toastMessage}
+            </span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="text-emerald-700 hover:text-emerald-950 font-bold ml-4 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Modal Header */}
         <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-start justify-between">
           <div>
             <div className="flex items-center space-x-3 mb-1">
               <span className="font-mono font-bold text-sky-600 bg-sky-100 px-2.5 py-0.5 rounded-md text-xs">
-                {ticket.id}
+                {currentTicket.id}
               </span>
-              <StatusBadge status={ticket.status} />
-              <PriorityBadge priority={ticket.priority} />
+              <StatusBadge status={currentTicket.status} />
+              <PriorityBadge priority={currentTicket.priority} />
             </div>
-            <h2 className="text-xl font-bold text-slate-900">{ticket.subject}</h2>
+            <h2 className="text-xl font-bold text-slate-900">{currentTicket.subject}</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -322,11 +363,11 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                 SLA Compliance
               </p>
               <div className="flex items-center justify-between">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${getSLABadgeStyle(ticket.slaStatus)}`}>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${getSLABadgeStyle(currentTicket.slaStatus)}`}>
                   <Clock className="w-3 h-3 mr-1" />
-                  {ticket.slaStatus}
+                  {currentTicket.slaStatus}
                 </span>
-                <span className="text-xs font-medium text-slate-600">{ticket.slaRemaining}</span>
+                <span className="text-xs font-medium text-slate-600">{currentTicket.slaRemaining}</span>
               </div>
             </div>
 
@@ -338,41 +379,41 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Department</span>
-                  <span className="font-semibold text-slate-800">{ticket.department || 'IT'}</span>
+                  <span className="font-semibold text-slate-800">{currentTicket.department || 'IT'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Category</span>
-                  <span className="font-semibold text-slate-800">{ticket.category}</span>
+                  <span className="font-semibold text-slate-800">{currentTicket.category}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Assigned To</span>
-                  <span className="font-semibold text-sky-700">{ticket.assignedAgent}</span>
+                  <span className="font-semibold text-sky-700">{currentTicket.assignedAgent || 'Unassigned'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Assigned By</span>
-                  <span className="font-medium text-slate-700">{ticket.assignedBy || (ticket.employee ? `${ticket.employee} (Requester)` : 'Unassigned')}</span>
+                  <span className="font-medium text-slate-700">{currentTicket.assignedBy || (currentTicket.employee ? `${currentTicket.employee} (Requester)` : 'Unassigned')}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Assigned Date</span>
-                  <span className="text-slate-700 text-[11px]">{formatDate(ticket.assignedDate || ticket.createdAt)}</span>
+                  <span className="text-slate-700 text-[11px]">{formatDate(currentTicket.assignedDate || currentTicket.createdAt)}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Last Updated</span>
-                  <span className="text-slate-700 text-[11px]">{formatDate(ticket.updatedAt)}</span>
+                  <span className="text-slate-700 text-[11px]">{formatDate(currentTicket.updatedAt)}</span>
                 </div>
               </div>
 
               <div className="pt-1 border-t border-slate-100">
                 <span className="text-slate-400 block text-[10px] uppercase font-semibold">Employee / Requester</span>
-                <span className="font-semibold text-slate-800">{ticket.employee}</span>
-                <span className="text-slate-400 block text-[10px]">{ticket.employeeEmail}</span>
+                <span className="font-semibold text-slate-800">{currentTicket.employee}</span>
+                <span className="text-slate-400 block text-[10px]">{currentTicket.employeeEmail}</span>
               </div>
 
-              {ticket.status === 'Resolved' && (
+              {currentTicket.status === 'Resolved' && (
                 <div className="pt-2 border-t border-emerald-100 bg-emerald-50/60 p-2.5 rounded-lg text-emerald-900">
                   <span className="text-emerald-700 block text-[10px] uppercase font-bold">Resolution Summary</span>
                   <p className="text-xs text-emerald-800 mt-0.5">
-                    {ticket.resolutionSummary || 'Issue resolved following standard troubleshooting & verification.'}
+                    {currentTicket.resolutionSummary || 'Issue resolved following standard troubleshooting & verification.'}
                   </p>
                 </div>
               )}
@@ -390,10 +431,28 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                 <div>
                   <label className="block text-[11px] font-medium text-slate-500 mb-1">Assign / Reassign Employee</label>
                   <select
-                    value={ticket.assignedAgent}
-                    onChange={(e) => {
-                      const selectedUser = users.find((u) => u.name === e.target.value);
-                      assignAgent(ticket.id, selectedUser ? selectedUser.id : 'EMP-001', e.target.value);
+                    value={currentTicket.assignedAgent || 'Unassigned'}
+                    onChange={async (e) => {
+                      const val = e.target.value;
+                      if (val === 'Unassigned') {
+                        setCurrentTicket((prev) => ({ ...prev, assignedAgent: 'Unassigned', assignedAgentId: undefined }));
+                        await assignAgent(currentTicket.id, '', 'Unassigned', currentTicket.priority);
+                        showToast('Ticket marked as unassigned');
+                      } else {
+                        const selectedUser = users.find((u) => u.name === val);
+                        if (!selectedUser) return;
+                        setCurrentTicket((prev) => ({ ...prev, assignedAgent: selectedUser.name, assignedAgentId: selectedUser.id }));
+                        await assignAgent(currentTicket.id, selectedUser.id, selectedUser.name, currentTicket.priority);
+                        showToast(`Assigned to ${selectedUser.name}`);
+                      }
+                      const fresh = await ticketService.getTicketById(currentTicket.id);
+                      if (fresh) {
+                        setCurrentTicket(fresh);
+                        setSelectedTicket(fresh);
+                      }
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: currentTicket.id } }));
+                      }
                     }}
                     className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-sky-500 cursor-pointer"
                   >
@@ -410,9 +469,22 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                 <div>
                   <label className="block text-[11px] font-medium text-slate-500 mb-1">Update Status</label>
                   <select
-                    value={ticket.status}
-                    onChange={(e) => updateStatus(ticket.id, e.target.value as TicketStatus)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
+                    value={currentTicket.status}
+                    onChange={async (e) => {
+                      const nextStatus = e.target.value as TicketStatus;
+                      setCurrentTicket((prev) => ({ ...prev, status: nextStatus }));
+                      await updateStatus(currentTicket.id, nextStatus);
+                      showToast(`Status updated to ${nextStatus}`);
+                      const fresh = await ticketService.getTicketById(currentTicket.id);
+                      if (fresh) {
+                        setCurrentTicket(fresh);
+                        setSelectedTicket(fresh);
+                      }
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: currentTicket.id } }));
+                      }
+                    }}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 cursor-pointer"
                   >
                     {STATUSES.map((s) => (
                       <option key={s} value={s}>{s}</option>
@@ -424,9 +496,22 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                 <div>
                   <label className="block text-[11px] font-medium text-slate-500 mb-1">Change Priority</label>
                   <select
-                    value={ticket.priority}
-                    onChange={(e) => changePriority(ticket.id, e.target.value as TicketPriority)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
+                    value={currentTicket.priority}
+                    onChange={async (e) => {
+                      const nextPriority = e.target.value as TicketPriority;
+                      setCurrentTicket((prev) => ({ ...prev, priority: nextPriority }));
+                      await changePriority(currentTicket.id, nextPriority);
+                      showToast(`Priority updated to ${nextPriority}`);
+                      const fresh = await ticketService.getTicketById(currentTicket.id);
+                      if (fresh) {
+                        setCurrentTicket(fresh);
+                        setSelectedTicket(fresh);
+                      }
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: currentTicket.id } }));
+                      }
+                    }}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 cursor-pointer"
                   >
                     {PRIORITIES.map((p) => (
                       <option key={p} value={p}>{p}</option>
@@ -436,7 +521,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
 
                 {/* Escalate & Resolve Buttons */}
                 <div className="pt-2 flex items-center gap-2">
-                  {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && ticket.status !== 'Escalated' && (
+                  {currentTicket.status !== 'Resolved' && currentTicket.status !== 'Closed' && currentTicket.status !== 'Escalated' && (
                     <button
                       onClick={() => setEscalationModalOpen(true)}
                       className="flex-1 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold rounded-lg border border-rose-200 text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
@@ -445,9 +530,17 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                       Escalate
                     </button>
                   )}
-                  {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
+                  {currentTicket.status !== 'Resolved' && currentTicket.status !== 'Closed' && (
                     <button
-                      onClick={() => resolveTicket(ticket.id)}
+                      onClick={async () => {
+                        await resolveTicket(currentTicket.id);
+                        showToast('Ticket marked as resolved');
+                        const fresh = await ticketService.getTicketById(currentTicket.id);
+                        if (fresh) {
+                          setCurrentTicket(fresh);
+                          setSelectedTicket(fresh);
+                        }
+                      }}
                       className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center justify-center gap-1 transition-colors shadow-xs cursor-pointer"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />

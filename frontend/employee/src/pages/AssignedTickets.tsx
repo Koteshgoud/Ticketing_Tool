@@ -27,6 +27,15 @@ export const AssignedTickets: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
+    const handleUpdate = () => {
+      loadTickets();
+    };
+    window.addEventListener('ticket-updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ticket-updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   useEffect(() => {

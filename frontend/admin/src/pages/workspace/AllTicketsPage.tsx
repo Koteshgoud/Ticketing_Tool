@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -12,10 +12,13 @@ import { Search, RefreshCw, Eye, CheckCircle } from 'lucide-react';
 
 export const AllTicketsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || '';
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(urlSearch);
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -23,16 +26,40 @@ export const AllTicketsPage: React.FC = () => {
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const fetchTickets = async () => {
+  const fetchTickets = async (force = false) => {
     setIsLoading(true);
-    const data = await AdminApiService.getTickets('all');
+    const data = await AdminApiService.getTickets('all', force);
     setTickets(data);
     setIsLoading(false);
   };
 
   useEffect(() => {
     fetchTickets();
+    const handleTicketUpdated = () => {
+      fetchTickets(true);
+    };
+    window.addEventListener('ticket-updated', handleTicketUpdated);
+    window.addEventListener('storage', handleTicketUpdated);
+    return () => {
+      window.removeEventListener('ticket-updated', handleTicketUpdated);
+      window.removeEventListener('storage', handleTicketUpdated);
+    };
   }, []);
+
+  useEffect(() => {
+    setSearch(urlSearch);
+  }, [urlSearch]);
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    const nextParams = new URLSearchParams(searchParams);
+    if (val.trim()) {
+      nextParams.set('search', val);
+    } else {
+      nextParams.delete('search');
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   useEffect(() => {
     if (toastMessage) {
@@ -195,7 +222,7 @@ export const AllTicketsPage: React.FC = () => {
           variant="secondary"
           size="sm"
           icon={<RefreshCw className="w-4 h-4" />}
-          onClick={fetchTickets}
+          onClick={() => fetchTickets(true)}
           className="text-[13px]"
         >
           Refresh
@@ -209,7 +236,7 @@ export const AllTicketsPage: React.FC = () => {
             <Input
               placeholder="Search by ID, title, or requester..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               icon={<Search className="w-4 h-4 text-slate-400" />}
             />
           </div>
@@ -264,6 +291,7 @@ export const AllTicketsPage: React.FC = () => {
           data={filteredTickets}
           keyExtractor={(row) => row.id}
           isLoading={isLoading}
+          emptyMessage={search.trim() ? `No tickets found matching "${search}"` : 'No tickets found'}
         />
       </Card>
     </div>

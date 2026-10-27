@@ -136,6 +136,15 @@ export const AssignedTicketDetails: React.FC = () => {
 
   useEffect(() => {
     loadTicket();
+    const handleUpdate = () => {
+      loadTicket();
+    };
+    window.addEventListener('ticket-updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ticket-updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, [id]);
 
   useEffect(() => {

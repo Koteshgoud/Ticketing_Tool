@@ -130,8 +130,12 @@ export const TicketManagementPage: React.FC = () => {
     let persisted: Ticket | null = null;
     if (actionModalType === 'assign' || actionModalType === 'reassign') {
       updatedTicket.assignedTo = modalAssignee;
-      if (updatedTicket.status === 'Open') updatedTicket.status = 'In Progress';
-      persisted = await AdminApiService.updateTicket(selectedTicket.id, { assignedTo: modalAssignee, status: updatedTicket.status }, modalNote || `Assigned to ${modalAssignee}`);
+      updatedTicket.priority = modalPriority;
+      persisted = await AdminApiService.updateTicket(
+        selectedTicket.id,
+        { assignedTo: modalAssignee, status: updatedTicket.status, priority: modalPriority },
+        modalNote || `Assigned to ${modalAssignee}`
+      );
     } else if (actionModalType === 'status') {
       updatedTicket.status = modalStatus;
       persisted = await AdminApiService.updateTicket(selectedTicket.id, { status: modalStatus }, modalNote || `Status changed to ${modalStatus}`);

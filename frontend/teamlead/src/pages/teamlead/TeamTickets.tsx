@@ -49,13 +49,14 @@ export const TeamTickets: React.FC = () => {
     return s.includes('risk') || s.includes('breach') || s.includes('approach');
   };
 
-  // Synchronize URL query parameters (?filter=, ?status=, ?sla=)
+  // Synchronize URL query parameters (?filter=, ?status=, ?sla=, ?search=)
   useEffect(() => {
-    let filterParam = searchParams.get('filter')?.toLowerCase();
-    let statusParam = searchParams.get('status')?.toLowerCase();
-    let slaParam = searchParams.get('sla')?.toLowerCase();
+    let filterParam: string | null | undefined = searchParams.get('filter')?.toLowerCase();
+    let statusParam: string | null | undefined = searchParams.get('status')?.toLowerCase();
+    let slaParam: string | null | undefined = searchParams.get('sla')?.toLowerCase();
+    let searchParam: string | null | undefined = searchParams.get('search') || searchParams.get('q') || undefined;
 
-    if (!filterParam && !statusParam && !slaParam && typeof window !== 'undefined') {
+    if (!filterParam && !statusParam && !slaParam && !searchParam && typeof window !== 'undefined') {
       const fullHash = window.location.hash || '';
       const queryPart = fullHash.includes('?') ? fullHash.split('?')[1] : window.location.search;
       if (queryPart) {
@@ -63,7 +64,12 @@ export const TeamTickets: React.FC = () => {
         filterParam = urlParams.get('filter')?.toLowerCase() || undefined;
         statusParam = urlParams.get('status')?.toLowerCase() || undefined;
         slaParam = urlParams.get('sla')?.toLowerCase() || undefined;
+        searchParam = urlParams.get('search') || urlParams.get('q') || undefined;
       }
+    }
+
+    if (searchParam !== null && searchParam !== undefined) {
+      setSearchQuery(searchParam);
     }
 
     if (filterParam) {
@@ -92,6 +98,24 @@ export const TeamTickets: React.FC = () => {
       setActiveTab('SLA Risk');
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (outletContext?.globalSearch !== undefined && outletContext.globalSearch !== searchQuery) {
+      setSearchQuery(outletContext.globalSearch);
+    }
+  }, [outletContext?.globalSearch]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    setCurrentPage(1);
+    const nextParams = new URLSearchParams(searchParams);
+    if (val.trim()) {
+      nextParams.set('search', val);
+    } else {
+      nextParams.delete('search');
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -146,7 +170,8 @@ export const TeamTickets: React.FC = () => {
       const matchEmployee = String(ticket.employee || '').toLowerCase().includes(q);
       const matchAgent = String(ticket.assignedAgent || '').toLowerCase().includes(q);
       const matchPriority = String(ticket.priority || '').toLowerCase().includes(q);
-      if (!matchId && !matchNumber && !matchSubject && !matchDesc && !matchDept && !matchCat && !matchEmployee && !matchAgent && !matchPriority) return false;
+      const matchStatus = String(ticket.status || '').toLowerCase().includes(q);
+      if (!matchId && !matchNumber && !matchSubject && !matchDesc && !matchDept && !matchCat && !matchEmployee && !matchAgent && !matchPriority && !matchStatus) return false;
     }
 
     return true;
@@ -235,10 +260,7 @@ export const TeamTickets: React.FC = () => {
       <div className="space-y-3">
         <SearchBar
           value={searchQuery}
-          onChange={(val) => {
-            setSearchQuery(val);
-            setCurrentPage(1);
-          }}
+          onChange={handleSearchChange}
           placeholder="Search by Ticket ID (e.g. TKT-1001), Subject, Employee, or Agent..."
         />
 
