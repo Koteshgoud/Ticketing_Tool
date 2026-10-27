@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Ticket, TicketPriority } from '../../types/ticket';
 import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';
@@ -30,9 +30,21 @@ export const AssignTicketModal: React.FC<AssignTicketModalProps> = ({
       ? ticket.assignedAgent
       : activeEmployees[0]?.name || ''
   );
-  const [priority, setPriority] = useState<TicketPriority>(ticket.priority);
+  const [priority, setPriority] = useState<TicketPriority>(ticket.priority || 'Medium');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (ticket) {
+      setSelectedEmployeeName(
+        ticket.assignedAgent && ticket.assignedAgent !== 'Unassigned'
+          ? ticket.assignedAgent
+          : activeEmployees[0]?.name || ''
+      );
+      setPriority(ticket.priority || 'Medium');
+      setError('');
+    }
+  }, [ticket, isOpen]);
 
   const isReassign = ticket.assignedAgent && ticket.assignedAgent !== 'Unassigned';
 
@@ -46,14 +58,14 @@ export const AssignTicketModal: React.FC<AssignTicketModalProps> = ({
     }
 
     const selectedEmployee = activeEmployees.find((u) => u.name === selectedEmployeeName);
-    const empId = selectedEmployee ? selectedEmployee.id : 'EMP-001';
+    const empId = selectedEmployee ? selectedEmployee.id : '';
 
     setIsSubmitting(true);
     try {
       // Call Context Assign passing priority atomically
       await assignAgent(ticket.id, empId, selectedEmployeeName, priority);
 
-      const toastMsg = `Ticket ${ticket.id} assigned successfully.`;
+      const toastMsg = `Ticket ${ticket.id} assigned to ${selectedEmployeeName} with ${priority} priority successfully.`;
       if (onSuccessToast) {
         onSuccessToast(toastMsg);
       } else {

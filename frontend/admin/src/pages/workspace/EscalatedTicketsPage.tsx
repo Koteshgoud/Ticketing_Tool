@@ -64,9 +64,17 @@ export const EscalatedTicketsPage: React.FC = () => {
     if (!selectedTicket || !newAssignee) return;
 
     setIsSubmitting(true);
+    const selectedUser = users.find((u) => u.name === newAssignee);
     const logText = `Ticket reassigned from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reassignReason ? ` Reason: ${reassignReason}` : ''}`;
     
-    await AdminApiService.updateTicket(selectedTicket.id, { assignedTo: newAssignee }, logText);
+    await AdminApiService.updateTicket(
+      selectedTicket.id,
+      {
+        assignedTo: newAssignee,
+        ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
+      } as any,
+      logText
+    );
 
     setToast({
       type: 'success',

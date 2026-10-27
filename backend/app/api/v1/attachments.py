@@ -46,6 +46,16 @@ def _validate_ticket_id(ticket_id: str) -> str:
     return clean
 
 
+def _candidate_ids(ticket_id: str, ticket: dict[str, Any] | None = None) -> list[str]:
+    cands: list[str] = []
+    for cand in (ticket_id, (ticket.get("id") if ticket else None), (ticket.get("ticket_number") if ticket else None)):
+        if cand:
+            c = str(cand).strip()
+            if c and c not in (".", "..") and c not in cands:
+                cands.append(c)
+    return cands
+
+
 def require_ticket_access(
     ticket_id: str,
     payload: dict[str, Any] = Depends(get_current_user),
@@ -56,10 +66,16 @@ def require_ticket_access(
     - 404 when the ticket does not exist.
     - 403 when the authenticated user is not permitted to access the ticket.
     """
-    ticket_id = _validate_ticket_id(ticket_id)
+    clean_id = _validate_ticket_id(ticket_id)
     sb = get_supabase_client()
-    res = sb.table("tickets").select("*").eq("id", ticket_id).limit(1).execute()
+    res = sb.table("tickets").select("*").eq("id", clean_id).limit(1).execute()
     rows = res.data or []
+    if not rows:
+        try:
+            res = sb.table("tickets").select("*").eq("ticket_number", clean_id).limit(1).execute()
+            rows = res.data or []
+        except Exception:
+            pass
     if not rows:
         raise HTTPException(status_code=404, detail="Ticket not found")
     ticket = rows[0]
@@ -224,19 +240,28 @@ def _base_url(request: Request | None) -> str:
     return "http://localhost:8000"
 
 
-def _db_attachments(ticket_id: str) -> list[dict[str, Any]]:
+def _db_attachments(ticket_ids: str | list[str]) -> list[dict[str, Any]]:
+    ids = [ticket_ids] if isinstance(ticket_ids, str) else list(ticket_ids)
+    if not ids:
+        return []
     try:
         sb = get_supabase_admin_client()
-        res = (
-            sb.table("ticket_attachments")
-            .select("*")
-            .eq("ticket_id", ticket_id)
-            .order("created_at", desc=False)
-            .execute()
-        )
-        return res.data or []
+        res_list: list[dict[str, Any]] = []
+        for tid in ids:
+            if not tid:
+                continue
+            res = (
+                sb.table("ticket_attachments")
+                .select("*")
+                .eq("ticket_id", tid)
+                .order("created_at", desc=False)
+                .execute()
+            )
+            for row in (res.data or []):
+                res_list.append(row)
+        return res_list
     except Exception as exc:  # pragma: no cover - defensive
-        print(f"[attachments] metadata lookup failed for {ticket_id}: {exc}")
+        print(f"[attachments] metadata lookup failed for {ticket_ids}: {exc}")
         return []
 
 
@@ -253,9 +278,10 @@ def list_attachments(
     ever hidden, even if the metadata row could not be written.
     """
     base = _base_url(request)
+    cands = _candidate_ids(ticket_id, _ticket)
     merged: dict[str, dict[str, Any]] = {}
 
-    for row in _db_attachments(ticket_id):
+    for row in _db_attachments(cands):
         att_id = str(row.get("id") or row.get("name") or "")
         if not att_id:
             continue
@@ -277,13 +303,14 @@ def list_attachments(
             "created_at": row.get("created_at"),
         }
 
-    for rec in _disk_records(ticket_id, base):
-        # Disk metadata is authoritative for files that exist.
-        existing = merged.get(rec["id"])
-        if existing:
-            existing.update(rec)
-        else:
-            merged[rec["id"]] = rec
+    for cid in cands:
+        for rec in _disk_records(cid, base):
+            # Disk metadata is authoritative for files that exist.
+            existing = merged.get(rec["id"])
+            if existing:
+                existing.update(rec)
+            else:
+                merged[rec["id"]] = rec
 
     return list(merged.values())
 
@@ -435,34 +462,36 @@ async def upload_attachments(
     return results
 
 
-def _find_file(ticket_id: str, att_id: str) -> Path | None:
-    """Locate a stored file by attachment id (or filename)."""
-    folder = _ticket_folder(ticket_id)
-    if not folder.exists():
-        return None
-
+def _find_file(ticket_id: str, att_id: str, ticket: dict[str, Any] | None = None) -> Path | None:
+    """Locate a stored file by attachment id (or filename) across candidate ticket folders."""
+    cands = _candidate_ids(ticket_id, ticket)
     raw_clean = unquote(att_id or "").strip()
     # Strip optional trailing human size such as " (23.2 KB)" or " (1 MB)"
     clean_id = re.sub(r"\s*\([^)]*\)$", "", raw_clean).strip()
     norm_clean = re.sub(r"[\s_]+", "_", clean_id.lower())
 
-    for f in folder.iterdir():
-        if not f.is_file() or f.name == METADATA_FILE or f.name.startswith("."):
+    for cid in cands:
+        folder = UPLOAD_BASE_DIR / _validate_ticket_id(cid)
+        if not folder.exists():
             continue
-        stored_id, original_name = _split_stored_name(f.name)
-        norm_orig = re.sub(r"[\s_]+", "_", original_name.lower())
-        norm_stored = re.sub(r"[\s_]+", "_", stored_id.lower())
 
-        if (
-            f.name == raw_clean
-            or f.name == clean_id
-            or stored_id == clean_id
-            or original_name == clean_id
-            or norm_orig == norm_clean
-            or norm_stored == norm_clean
-            or original_name.replace("_", " ").lower() == clean_id.replace("_", " ").lower()
-        ):
-            return f
+        for f in folder.iterdir():
+            if not f.is_file() or f.name == METADATA_FILE or f.name.startswith("."):
+                continue
+            stored_id, original_name = _split_stored_name(f.name)
+            norm_orig = re.sub(r"[\s_]+", "_", original_name.lower())
+            norm_stored = re.sub(r"[\s_]+", "_", stored_id.lower())
+
+            if (
+                f.name == raw_clean
+                or f.name == clean_id
+                or stored_id == clean_id
+                or original_name == clean_id
+                or norm_orig == norm_clean
+                or norm_stored == norm_clean
+                or original_name.replace("_", " ").lower() == clean_id.replace("_", " ").lower()
+            ):
+                return f
     return None
 
 
@@ -473,7 +502,7 @@ def download_attachment(
     _ticket: dict[str, Any] = Depends(require_ticket_access),
 ):
     """Download an attachment file by its ID or filename."""
-    match = _find_file(ticket_id, att_id)
+    match = _find_file(ticket_id, att_id, _ticket)
     if match is not None:
         media_type, _ = mimetypes.guess_type(str(match))
         _, original_name = _split_stored_name(match.name)
@@ -492,7 +521,7 @@ def view_attachment(
     _ticket: dict[str, Any] = Depends(require_ticket_access),
 ):
     """View an attachment inline (images, PDFs, text) when the file exists."""
-    match = _find_file(ticket_id, att_id)
+    match = _find_file(ticket_id, att_id, _ticket)
     if match is not None:
         media_type, _ = mimetypes.guess_type(str(match))
         _, original_name = _split_stored_name(match.name)

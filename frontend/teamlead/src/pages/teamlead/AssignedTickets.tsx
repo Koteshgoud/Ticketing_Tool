@@ -259,7 +259,7 @@ export const AssignedTickets: React.FC = () => {
                     return (
                       <tr
                         key={ticket.id}
-                        onClick={() => navigate(`/teamlead/assigned-tickets/${ticket.id}`)}
+                        onClick={() => navigate(`/teamlead/assigned-tickets/${ticket.id}?mode=work`)}
                         className="hover:bg-slate-50/70 transition-colors cursor-pointer group"
                       >
                         {/* Ticket ID */}
@@ -305,15 +305,6 @@ export const AssignedTickets: React.FC = () => {
                         {/* Actions */}
                         <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => setViewModalTicket(ticket)}
-                              className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:text-[#0284C7] hover:bg-sky-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shrink-0 whitespace-nowrap"
-                              title="View Ticket Details (Read-Only)"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>View</span>
-                            </button>
                             <button
                               type="button"
                               onClick={() => navigate(`/teamlead/assigned-tickets/${ticket.id}?mode=work`)}

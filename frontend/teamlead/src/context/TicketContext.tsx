@@ -257,26 +257,28 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
     if (!ok) {
       setErrorFrom('Could not assign the ticket. Please try again.');
-      return;
+      throw new Error('Could not assign the ticket. Please try again.');
     }
+    await refresh(true);
     await refreshTicketDetail(ticketId);
     await loadEscalations();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: ticketId } }));
     }
-  }, [currentUserId, currentUserName, loadEscalations, refreshTicketDetail, setErrorFrom]);
+  }, [currentUserId, currentUserName, loadEscalations, refresh, refreshTicketDetail, setErrorFrom]);
 
   const changePriority = useCallback(async (ticketId: string, priority: TicketPriority) => {
     const ok = await ticketService.changePriority(ticketId, priority);
     if (!ok) {
       setErrorFrom('Could not change the ticket priority. Please try again.');
-      return;
+      throw new Error('Could not change the ticket priority. Please try again.');
     }
+    await refresh(true);
     await refreshTicketDetail(ticketId);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: ticketId } }));
     }
-  }, [refreshTicketDetail, setErrorFrom]);
+  }, [refresh, refreshTicketDetail, setErrorFrom]);
 
   const addComment = useCallback(async (
     ticketId: string,

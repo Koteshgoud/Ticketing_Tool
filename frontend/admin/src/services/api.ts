@@ -694,6 +694,8 @@ export const AdminApiService = {
         `/tickets/${encodeURIComponent(ticketId)}/assign`,
         jsonInit('POST', {
           assigned_agent: updates.assignedTo || 'Unassigned',
+          assigned_agent_id: (updates as any).assignedAgentId || undefined,
+          priority: updates.priority || undefined,
           note: activityNote,
         })
       );

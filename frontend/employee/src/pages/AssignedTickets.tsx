@@ -73,9 +73,9 @@ export const AssignedTickets: React.FC = () => {
       cell: (row) => (
         <button
           type="button"
-          onClick={() => navigate(`/assigned-tickets/${row.id}?mode=view`)}
+          onClick={() => navigate(`/assigned-tickets/${row.id}?mode=work`)}
           className="font-mono text-xs font-bold text-[#0284C7] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
-          title="View Ticket (Read-only)"
+          title="Work on Ticket"
         >
           {row.ticketNumber}
         </button>
@@ -121,16 +121,6 @@ export const AssignedTickets: React.FC = () => {
       header: 'Action',
       cell: (row) => (
         <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/assigned-tickets/${row.id}?mode=view`)}
-            className="border-slate-200 hover:border-[#0284C7] hover:bg-sky-50 text-slate-600 hover:text-[#0284C7] text-xs font-medium cursor-pointer"
-            title="Read-only View"
-          >
-            <Eye className="w-3.5 h-3.5 mr-1" />
-            View
-          </Button>
           <Button
             variant="outline"
             size="sm"

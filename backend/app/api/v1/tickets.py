@@ -136,9 +136,16 @@ def _actor_name(user: dict[str, Any]) -> str:
 
 
 def _fetch_ticket(ticket_id: str) -> dict[str, Any]:
+    clean_id = (ticket_id or "").strip()
     sb = get_supabase_admin_client()
-    res = sb.table("tickets").select("*").eq("id", ticket_id).limit(1).execute()
+    res = sb.table("tickets").select("*").eq("id", clean_id).limit(1).execute()
     rows = res.data or []
+    if not rows:
+        try:
+            res = sb.table("tickets").select("*").eq("ticket_number", clean_id).limit(1).execute()
+            rows = res.data or []
+        except Exception:
+            pass
     if not rows:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return rows[0]
@@ -363,30 +370,54 @@ def get_ticket(
     ticket = _require_visible(payload, user, ticket_id)
 
     sb = get_supabase_admin_client()
+    cands: list[str] = []
+    for cand in (ticket_id, ticket.get("id"), ticket.get("ticket_number")):
+        if cand:
+            c = str(cand).strip()
+            if c and c not in cands:
+                cands.append(c)
+
     comments: list[dict[str, Any]] = []
     activities: list[dict[str, Any]] = []
-    try:
-        res = (
-            sb.table("ticket_comments")
-            .select("*")
-            .eq("ticket_id", ticket_id)
-            .order("created_at", desc=False)
-            .execute()
-        )
-        comments = res.data or []
-    except Exception as exc:
-        print(f"[tickets] comments unavailable: {exc}")
-    try:
-        res = (
-            sb.table("ticket_activities")
-            .select("*")
-            .eq("ticket_id", ticket_id)
-            .order("timestamp", desc=True)
-            .execute()
-        )
-        activities = res.data or []
-    except Exception as exc:
-        print(f"[tickets] activities unavailable: {exc}")
+    seen_comment_ids: set[str] = set()
+    for cid in cands:
+        try:
+            res = (
+                sb.table("ticket_comments")
+                .select("*")
+                .eq("ticket_id", cid)
+                .order("created_at", desc=False)
+                .execute()
+            )
+            for row in (res.data or []):
+                rid = str(row.get("id") or "")
+                if rid and rid in seen_comment_ids:
+                    continue
+                if rid:
+                    seen_comment_ids.add(rid)
+                comments.append(row)
+        except Exception as exc:
+            print(f"[tickets] comments unavailable: {exc}")
+
+    seen_act_ids: set[str] = set()
+    for cid in cands:
+        try:
+            res = (
+                sb.table("ticket_activities")
+                .select("*")
+                .eq("ticket_id", cid)
+                .order("timestamp", desc=True)
+                .execute()
+            )
+            for row in (res.data or []):
+                rid = str(row.get("id") or "")
+                if rid and rid in seen_act_ids:
+                    continue
+                if rid:
+                    seen_act_ids.add(rid)
+                activities.append(row)
+        except Exception as exc:
+            print(f"[tickets] activities unavailable: {exc}")
 
     result = serialize_ticket(ticket, load_attachments=True)
     # Internal notes are only returned to users who can manage the ticket.
@@ -403,6 +434,23 @@ def get_ticket(
         }
         for a in activities
     ]
+
+    try:
+        from app.api.v1.attachments import _base_url, _db_attachments, _disk_records
+        base = _base_url(None)
+        merged_atts: dict[str, dict[str, Any]] = {}
+        for cid in cands:
+            for r in _db_attachments(cid):
+                att_id = str(r.get("id") or r.get("name") or "")
+                if att_id:
+                    merged_atts[att_id] = r
+            for r in _disk_records(cid, base):
+                merged_atts[r["id"]] = r
+        if merged_atts:
+            result["attachments"] = list(merged_atts.values())
+    except Exception as exc:
+        print(f"[tickets] attachments retrieval failed for {ticket_id}: {exc}")
+
     return result
 
 
@@ -731,8 +779,14 @@ def update_ticket(
         if not target:
             raise HTTPException(status_code=400, detail="Assigned user does not exist")
         updates.setdefault("assigned_agent", target.get("name") or "Unassigned")
-    if "priority" in updates and "sla_due_at" not in updates:
-        updates["sla_due_at"] = _sla_due(updates["priority"], created_at=ticket.get("created_at"))
+    if "priority" in updates:
+        norm_priority = str(updates["priority"]).strip()
+        updates["priority"] = norm_priority
+        if "sla_due_at" not in updates:
+            updates["sla_due_at"] = _sla_due(norm_priority, created_at=ticket.get("created_at"))
+        from app.services.access import compute_sla
+        new_sla = compute_sla({**ticket, **updates})
+        updates["sla_status"] = new_sla["status"]
     if "status" in updates:
         new_status = str(updates["status"]).strip()
         if new_status.lower() == "resolved":
@@ -742,8 +796,11 @@ def update_ticket(
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     sb = get_supabase_admin_client()
+    canonical_id = str(ticket.get("id") or ticket_id)
     try:
-        res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+        res = sb.table("tickets").update(updates).eq("id", canonical_id).execute()
+        if not (res.data or []):
+            res = sb.table("tickets").update(updates).eq("ticket_number", ticket_id).execute()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not update ticket: {exc}") from exc
     if not (res.data or []):
@@ -898,6 +955,9 @@ def assign_ticket(
         norm_priority = body.priority.strip()
         updates["priority"] = norm_priority
         updates["sla_due_at"] = _sla_due(norm_priority, created_at=ticket.get("created_at"))
+        from app.services.access import compute_sla
+        new_sla = compute_sla({**ticket, **updates})
+        updates["sla_status"] = new_sla["status"]
 
     assigned_team_id: int | None = None
     if target:
@@ -908,14 +968,19 @@ def assign_ticket(
         updates["assigned_team_id"] = assigned_team_id
 
     sb = get_supabase_admin_client()
+    canonical_id = str(ticket.get("id") or ticket_id)
     try:
-        res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+        res = sb.table("tickets").update(updates).eq("id", canonical_id).execute()
+        if not (res.data or []):
+            res = sb.table("tickets").update(updates).eq("ticket_number", ticket_id).execute()
     except Exception as exc:
         if "Employees may only change status" in str(exc) or "42501" in str(exc):
             # Postgres trigger restricts anon updates on assigned_agent_id and assigned_team_id
             updates.pop("assigned_agent_id", None)
             updates.pop("assigned_team_id", None)
-            res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+            res = sb.table("tickets").update(updates).eq("id", canonical_id).execute()
+            if not (res.data or []):
+                res = sb.table("tickets").update(updates).eq("ticket_number", ticket_id).execute()
         else:
             raise HTTPException(status_code=502, detail=f"Database update failed: {exc}") from exc
     if not (res.data or []):

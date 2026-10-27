@@ -64,8 +64,16 @@ export const SLARiskPage: React.FC = () => {
         setIsSubmitting(false);
         return;
       }
+      const selectedUser = users.find((u) => u.name === newAssignee);
       const logMessage = `SLA Intervention: Reassigned from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reasonNote ? ` Reason: ${reasonNote}` : ''}`;
-      await AdminApiService.updateTicket(selectedTicket.id, { assignedTo: newAssignee }, logMessage);
+      await AdminApiService.updateTicket(
+        selectedTicket.id,
+        {
+          assignedTo: newAssignee,
+          ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
+        } as any,
+        logMessage
+      );
       setToast({
         type: 'success',
         message: `SLA Intervention applied! Ticket ${selectedTicket.ticketNumber} reassigned to ${newAssignee}. Notifications sent.`

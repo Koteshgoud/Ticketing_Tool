@@ -302,19 +302,10 @@ export const TicketDetailsPage: React.FC = () => {
         {/* Right: Action Buttons Row */}
         <div className="flex items-center flex-wrap gap-2">
           {isReadOnly ? (
-            <>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                <Eye className="w-3.5 h-3.5 text-slate-500" />
-                Read-Only View
-              </span>
-              <button
-                type="button"
-                onClick={switchToWorkMode}
-                className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                Work on Ticket
-              </button>
-            </>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+              <Eye className="w-3.5 h-3.5 text-slate-500" />
+              Read-Only View
+            </span>
           ) : (
             <>
               <button
@@ -520,14 +511,16 @@ export const TicketDetailsPage: React.FC = () => {
               <Paperclip className="w-3.5 h-3.5 text-slate-400" />
               ATTACHMENTS ({attachments.length})
             </span>
-            <button
-              type="button"
-              onClick={() => setIsAttachmentModalOpen(true)}
-              className="text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer flex items-center gap-1"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>+ Add Attachment</span>
-            </button>
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={() => setIsAttachmentModalOpen(true)}
+                className="text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>+ Add Attachment</span>
+              </button>
+            )}
           </div>
 
           {attachmentsLoading ? (
@@ -757,17 +750,10 @@ export const TicketDetailsPage: React.FC = () => {
                 </div>
               </form>
             ) : (
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="pt-3 border-t border-slate-100 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <p className="text-xs text-slate-500 italic">
                   This ticket is open in read-only view. Edit controls and comment submission are hidden.
                 </p>
-                <button
-                  type="button"
-                  onClick={switchToWorkMode}
-                  className="px-3 py-1.5 text-xs font-semibold text-sky-600 border border-sky-200 bg-white hover:bg-sky-50 rounded-lg cursor-pointer"
-                >
-                  Work on Ticket
-                </button>
               </div>
             )}
           </div>

@@ -173,25 +173,9 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
           </div>
           <div className="flex items-center gap-2">
             {isReadOnlyMode ? (
-              <>
-                <span className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 text-slate-600 rounded-lg border border-slate-200">
-                  Read-Only View
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onWorkOnTicket) {
-                      onWorkOnTicket(currentTicket);
-                    } else {
-                      setIsReadOnlyMode(false);
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-[#0284C7] hover:bg-[#0369a1] text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Work on Ticket</span>
-                </button>
-              </>
+              <span className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 text-slate-600 rounded-lg border border-slate-200">
+                Read-Only View
+              </span>
             ) : (
               <button
                 type="button"

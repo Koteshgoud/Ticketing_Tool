@@ -36,6 +36,12 @@ export const SLABreachedPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    window.addEventListener('ticket-updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('ticket-updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, []);
 
   const handleOpenModal = (ticket: Ticket) => {
@@ -53,12 +59,17 @@ export const SLABreachedPage: React.FC = () => {
     if (!selectedTicket || !newAssignee) return;
 
     setIsSubmitting(true);
+    const selectedUser = users.find((u) => u.name === newAssignee);
     const logText = `Emergency Reassign: Ticket transferred from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reasonNote ? ` Reason: ${reasonNote}` : ''}`;
 
     // Update assignee while retaining SLA Breached status
     await AdminApiService.updateTicket(
       selectedTicket.id,
-      { assignedTo: newAssignee, slaStatus: 'SLA Breached' },
+      {
+        assignedTo: newAssignee,
+        ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
+        slaStatus: 'SLA Breached'
+      } as any,
       logText
     );
 
