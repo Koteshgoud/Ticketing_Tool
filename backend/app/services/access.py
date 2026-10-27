@@ -67,7 +67,7 @@ _USER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _USER_CACHE_TTL = 30.0  # seconds
 
 _TEAM_MEMBERS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-_TEAM_MEMBERS_TTL = 5.0  # seconds
+_TEAM_MEMBERS_TTL = 30.0  # seconds
 
 # Lookup index (ids/emails/names) of a team lead's managed employees. Building
 # it once per team instead of once per ticket keeps ticket visibility checks
@@ -75,7 +75,7 @@ _TEAM_MEMBERS_TTL = 5.0  # seconds
 _TEAM_MEMBER_INDEX_CACHE: dict[str, tuple[float, tuple[set[str], set[str], set[str]]]] = {}
 
 _ALL_USERS_CACHE: tuple[float, list[dict[str, Any]]] | None = None
-_ALL_USERS_TTL = 3.0  # seconds
+_ALL_USERS_TTL = 30.0  # seconds
 
 
 def invalidate_all_users_cache() -> None:
@@ -236,13 +236,16 @@ TEAM_NAME_OR_LEAD_TO_ID: dict[str, int] = {
     "digital campaigns": 6,
     "it support team": 7,
     "it support": 7,
+    "it": 7,
+    "it operations": 7,
+    "okl120": 7,
+    "manikanta": 7,
     "finance team": 8,
     "finance": 8,
     "hr operations team": 9,
     "hr operations": 9,
     "hr": 9,
     "okl011": 9,
-    "manikanta": 9,
     "facilities team": 10,
     "facilities": 10,
     "general administration team": 11,
@@ -286,7 +289,8 @@ def teamlead_managed_employees(tl_user: dict[str, Any]) -> list[dict[str, Any]]:
     - Target user is not an admin or another team lead.
     - Linked by employee.team matching tl.id or tl.team, OR
       employee.team_lead_id matching tl.id.
-    - Department alone does NOT establish a team relationship.
+    - If the lead has no restricted team, employees in the same department
+      are managed by this lead.
     """
     tl_id = str(tl_user.get("id") or "").strip()
     now = time.time()
@@ -318,6 +322,10 @@ def teamlead_managed_employees(tl_user: dict[str, Any]) -> list[dict[str, Any]]:
                 is_member = True
         if not is_member and u.get("team_lead_id"):
             if str(u.get("team_lead_id") or "").strip() == tl_id:
+                is_member = True
+        if not is_member and not tl_team and not uteam:
+            # If lead and employee both have no specific sub-team, match by department
+            if _scopes_overlap(tl_user.get("department"), u.get("department")):
                 is_member = True
 
         if is_member:
@@ -606,6 +614,7 @@ def serialize_ticket(
     now: datetime | None = None,
     payload: dict[str, Any] | None = None,
     user: dict[str, Any] | None = None,
+    load_attachments: bool = True,
 ) -> dict[str, Any]:
     """Add server-computed SLA fields without mutating the stored row."""
     result = dict(ticket)
@@ -615,10 +624,12 @@ def serialize_ticket(
     result["sla_remaining"] = sla["remaining"]
     if sla["due_at"]:
         result["sla_due_at"] = sla["due_at"]
+
+    cached_users = fetch_all_users_cached()
     agent = _norm(ticket.get("assigned_agent"))
     if agent and agent not in ("", "unassigned", "none", "null"):
         matched = None
-        for u in fetch_all_users_cached():
+        for u in cached_users:
             uname = _norm(u.get("name"))
             uid = _norm(u.get("id"))
             if uname == agent or (len(uname) >= 3 and uname in agent) or uid == agent:
@@ -633,7 +644,7 @@ def serialize_ticket(
 
     emp = _norm(ticket.get("employee"))
     if emp and emp not in ("", "unassigned", "none", "null") and not result.get("employee_id"):
-        for u in fetch_all_users_cached():
+        for u in cached_users:
             uname = _norm(u.get("name"))
             uid = _norm(u.get("id"))
             if uname == emp or (len(uname) >= 3 and uname in emp) or uid == emp:
@@ -653,7 +664,7 @@ def serialize_ticket(
         )
 
     tid = str(ticket.get("id") or "")
-    if tid:
+    if load_attachments and tid:
         try:
             from app.api.v1.attachments import _disk_records
             disk_atts = _disk_records(tid, "")
@@ -674,13 +685,13 @@ def is_active(ticket: dict[str, Any]) -> bool:
 
 
 _RAW_TICKETS_CACHE: tuple[float, list[dict[str, Any]]] | None = None
-_RAW_TICKETS_TTL = 3.0  # seconds
+_RAW_TICKETS_TTL = 30.0  # seconds
 
 # Per-caller result of the visibility filter. ``/tickets``, ``/tickets/stats``
 # and ``/notifications`` all need the same scoped list, so the filtered rows
 # are computed once per caller instead of once per endpoint.
 _SCOPED_TICKETS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-_SCOPED_TICKETS_TTL = 3.0  # seconds
+_SCOPED_TICKETS_TTL = 30.0  # seconds
 
 
 def invalidate_tickets_cache() -> None:
@@ -705,7 +716,7 @@ def _scoped_cache_key(payload: dict[str, Any], user: dict[str, Any]) -> str:
 def scoped_tickets(payload: dict[str, Any], user: dict[str, Any]) -> list[dict[str, Any]]:
     """Fetch and filter tickets according to the caller's role.
 
-    The raw Supabase ticket list is cached for 3s to collapse parallel dashboard
+    The raw Supabase ticket list is cached for 30s to collapse parallel dashboard
     requests, and the per-caller visibility filter is cached for the same
     window so several endpoints share a single pass over the rows.
     """
@@ -723,6 +734,24 @@ def scoped_tickets(payload: dict[str, Any], user: dict[str, Any]) -> list[dict[s
         sb = get_supabase_admin_client()
         res = sb.table("tickets").select("*").order("created_at", desc=True).execute()
         rows = res.data or []
+
+        # Batch load tagged members to populate visibility without N+1 queries
+        tagged_map: dict[str, list[str]] = {}
+        try:
+            tt_res = sb.table("ticket_tagged_members").select("ticket_id, user_id").execute()
+            for tm in (tt_res.data or []):
+                t_id = str(tm.get("ticket_id") or "")
+                u_id = str(tm.get("user_id") or "")
+                if t_id and u_id:
+                    tagged_map.setdefault(t_id, []).append(u_id)
+        except Exception:
+            pass
+
+        for r in rows:
+            t_id = str(r.get("id") or "")
+            if t_id in tagged_map:
+                r["tagged_member_ids"] = tagged_map[t_id]
+
         _RAW_TICKETS_CACHE = (now, rows)
 
     unique: dict[str, dict[str, Any]] = {}
@@ -742,33 +771,65 @@ def ticket_stats(
     user: dict[str, Any] | None = None,
 ) -> dict[str, int]:
     now = now or datetime.now(timezone.utc)
-    serialized = [serialize_ticket(t, now, payload, user) for t in tickets]
-    active = [t for t in serialized if is_active(t)]
+    total = len(tickets)
+    open_cnt = 0
+    in_progress_cnt = 0
+    pending_cnt = 0
+    resolved_cnt = 0
+    unassigned_cnt = 0
+    escalated_cnt = 0
+    sla_risk_cnt = 0
+    sla_breached_cnt = 0
+    assigned_to_me_cnt = 0
+    my_tickets_cnt = 0
+
+    for t in tickets:
+        st = _norm(t.get("status"))
+        active = st not in ("resolved", "closed")
+
+        if not active:
+            resolved_cnt += 1
+        else:
+            if st == "open":
+                open_cnt += 1
+            elif st == "in progress":
+                in_progress_cnt += 1
+            elif st == "pending":
+                pending_cnt += 1
+            elif st == "escalated":
+                escalated_cnt += 1
+
+            ag = _norm(t.get("assigned_agent"))
+            ag_id = str(t.get("assigned_agent_id") or "")
+            if (not ag or ag in ("unassigned", "none", "null")) and not ag_id:
+                unassigned_cnt += 1
+
+            sla = compute_sla(t, now)
+            if sla["state"] == "risk":
+                sla_risk_cnt += 1
+            elif sla["state"] == "breached":
+                sla_breached_cnt += 1
+
+        if payload is not None and user is not None:
+            if _same_person(user, payload, t, "assigned_agent"):
+                assigned_to_me_cnt += 1
+            if _same_person(user, payload, t, "employee") or str(t.get("requester_id") or "") == str(user.get("id") or ""):
+                my_tickets_cnt += 1
+
     stats: dict[str, int] = {
-        "totalTickets": len(serialized),
-        "openTickets": sum(1 for t in active if _norm(t.get("status")) == "open"),
-        "inProgressTickets": sum(1 for t in active if _norm(t.get("status")) == "in progress"),
-        "pendingTickets": sum(1 for t in active if _norm(t.get("status")) == "pending"),
-        "resolvedTickets": sum(
-            1 for t in serialized if _norm(t.get("status")) in ("resolved", "closed")
-        ),
-        "unassignedTickets": sum(1 for t in active if t.get("is_unassigned")),
-        "escalatedTickets": sum(1 for t in active if _norm(t.get("status")) == "escalated"),
-        "slaRiskCount": sum(1 for t in active if t.get("sla_state") == "risk"),
-        "slaBreachedCount": sum(1 for t in active if t.get("sla_state") == "breached"),
+        "totalTickets": total,
+        "openTickets": open_cnt,
+        "inProgressTickets": in_progress_cnt,
+        "pendingTickets": pending_cnt,
+        "resolvedTickets": resolved_cnt,
+        "unassignedTickets": unassigned_cnt,
+        "escalatedTickets": escalated_cnt,
+        "slaRiskCount": sla_risk_cnt,
+        "slaBreachedCount": sla_breached_cnt,
     }
     if payload is not None and user is not None:
-        stats["assignedTicketsCount"] = sum(
-            1 for t in serialized if _same_person(user, payload, t, "assigned_agent")
-        )
-        stats["myTicketsCount"] = sum(
-            1
-            for t in serialized
-            if (
-                _same_person(user, payload, t, "employee")
-                or str(t.get("requester_id") or "") == str(user.get("id") or "")
-            )
-        )
+        stats["assignedTicketsCount"] = assigned_to_me_cnt
+        stats["myTicketsCount"] = my_tickets_cnt
     return stats
 
 

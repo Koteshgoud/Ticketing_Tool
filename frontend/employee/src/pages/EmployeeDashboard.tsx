@@ -19,21 +19,17 @@ import type { EmployeeTicket } from '../types';
 
 export const EmployeeDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [recentTickets, setRecentTickets] = useState<EmployeeTicket[]>([]);
-  const [stats, setStats] = useState({
-    myTicketsCount: 0,
-    assignedTicketsCount: 0,
-    open: 0,
-    inProgress: 0,
-    pending: 0,
-    resolved: 0,
-  });
+  const [loading, setLoading] = useState(() => EmployeeService.getTickets().length === 0);
+  const [recentTickets, setRecentTickets] = useState<EmployeeTicket[]>(() => EmployeeService.getEmployeeTickets().slice(0, 5));
+  const [stats, setStats] = useState(() => EmployeeService.getSummaryStats());
 
   useEffect(() => {
     let cancelled = false;
     const loadDashboardData = async (force = false) => {
       try {
+        if (EmployeeService.getTickets().length === 0) {
+          setLoading(true);
+        }
         await EmployeeService.fetchTickets(force);
         if (cancelled) return;
         const employeeTickets = EmployeeService.getEmployeeTickets();
@@ -48,8 +44,8 @@ export const EmployeeDashboard: React.FC = () => {
       }
     };
 
-    loadDashboardData();
-    const onTicketUpdated = () => loadDashboardData(true);
+    loadDashboardData(false);
+    const onTicketUpdated = () => loadDashboardData(false);
     window.addEventListener('ticket-updated', onTicketUpdated);
     window.addEventListener('storage', onTicketUpdated);
     return () => {

@@ -14,13 +14,10 @@ export const EmployeeLayout: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const updateAssignedCount = async (notify = false) => {
-      await EmployeeService.fetchTickets(true);
+    const updateAssignedCount = async (force = false) => {
+      await EmployeeService.fetchTickets(force);
       if (!cancelled) {
         setAssignedCount(EmployeeService.getAssignedTickets().length);
-        if (notify) {
-          window.dispatchEvent(new CustomEvent('ticket-updated'));
-        }
       }
     };
 
@@ -30,22 +27,28 @@ export const EmployeeLayout: React.FC = () => {
     const channel = supabase
       .channel('employee-realtime-tickets')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        EmployeeService.clearCache();
         void updateAssignedCount(true);
+        window.dispatchEvent(new CustomEvent('ticket-updated'));
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_activities' }, () => {
+        EmployeeService.clearCache();
         void updateAssignedCount(true);
+        window.dispatchEvent(new CustomEvent('ticket-updated'));
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, () => {
+        EmployeeService.clearCache();
         void updateAssignedCount(true);
+        window.dispatchEvent(new CustomEvent('ticket-updated'));
       })
       .subscribe();
 
-    // 2. Controlled Polling Fallback (7 seconds, active when tab is visible)
+    // 2. Controlled Polling Fallback (15 seconds, non-destructive background sync)
     const pollInterval = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void updateAssignedCount(true);
+        void updateAssignedCount(false);
       }
-    }, 7000);
+    }, 15000);
 
     const onLocalUpdated = () => {
       void updateAssignedCount(false);

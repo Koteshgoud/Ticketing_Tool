@@ -107,7 +107,7 @@ export interface TicketListResult {
 let _ticketsInflight: Promise<TicketListResult> | null = null;
 let _ticketsCache: Ticket[] | null = null;
 let _lastTicketsTime = 0;
-const TICKETS_CACHE_TTL = 3000;
+const TICKETS_CACHE_TTL = 30000;
 
 export function invalidateTeamLeadTicketsCache(): void {
   _ticketsCache = null;
@@ -121,6 +121,10 @@ export function invalidateTeamLeadTicketsCache(): void {
 export const ticketService = {
   invalidateCache(): void {
     invalidateTeamLeadTicketsCache();
+  },
+
+  getCachedTickets(): Ticket[] | null {
+    return _ticketsCache;
   },
 
   /** Fetch the caller's scoped tickets, surfacing API failures to the caller. */

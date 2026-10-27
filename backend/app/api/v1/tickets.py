@@ -388,7 +388,7 @@ def get_ticket(
     except Exception as exc:
         print(f"[tickets] activities unavailable: {exc}")
 
-    result = serialize_ticket(ticket)
+    result = serialize_ticket(ticket, load_attachments=True)
     # Internal notes are only returned to users who can manage the ticket.
     if not can_manage_ticket(payload, user, ticket):
         comments = [c for c in comments if not c.get("is_internal")]
@@ -557,13 +557,25 @@ def create_ticket(
         first_tl_id = next(iter(raw_tl_ids))
         tl_row = _find_user(user_id=first_tl_id)
         if tl_row:
-            assigned_team_id = resolve_team_id(tl_row.get("team")) or resolve_team_id(tl_row.get("id"))
+            assigned_team_id = (
+                resolve_team_id(tl_row.get("team"))
+                or resolve_team_id(tl_row.get("id"))
+                or resolve_team_id(tl_row.get("department"))
+            )
     if not assigned_team_id and agent_id:
         target_row = _find_user(user_id=agent_id)
         if target_row:
-            assigned_team_id = resolve_team_id(target_row.get("team")) or resolve_team_id(target_row.get("id"))
+            assigned_team_id = (
+                resolve_team_id(target_row.get("team"))
+                or resolve_team_id(target_row.get("id"))
+                or resolve_team_id(target_row.get("department"))
+            )
     if not assigned_team_id and is_teamlead(payload):
-        assigned_team_id = resolve_team_id(user.get("team")) or resolve_team_id(user.get("id"))
+        assigned_team_id = (
+            resolve_team_id(user.get("team"))
+            or resolve_team_id(user.get("id"))
+            or resolve_team_id(user.get("department"))
+        )
 
     assigned_by_user_id: str | None = None
     if is_teamlead(payload) or is_admin(payload):
@@ -573,6 +585,7 @@ def create_ticket(
     now = datetime.now(timezone.utc).isoformat()
     row: dict[str, Any] = {
         "id": ticket_id,
+        "ticket_number": ticket_id,
         "subject": body.subject.strip(),
         "description": body.description,
         "employee": employee_name or "User",
@@ -604,6 +617,22 @@ def create_ticket(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not create ticket: {exc}") from exc
     created = (res.data or [row])[0]
+
+    # Persist tagged and assigned members into ticket_tagged_members table
+    tagged_to_insert = set()
+    if raw_tl_ids:
+        tagged_to_insert.update(raw_tl_ids)
+    if raw_emp_ids:
+        tagged_to_insert.update(raw_emp_ids)
+    for member_uid in tagged_to_insert:
+        try:
+            sb.table("ticket_tagged_members").insert({
+                "ticket_id": ticket_id,
+                "user_id": str(member_uid),
+                "tagged_by": str(user.get("id") or ""),
+            }).execute()
+        except Exception as exc:
+            print(f"[tickets] could not insert tagged member {member_uid}: {exc}")
 
     invalidate_tickets_cache()
     _log_activity(ticket_id, _actor_name(user), "Ticket created")

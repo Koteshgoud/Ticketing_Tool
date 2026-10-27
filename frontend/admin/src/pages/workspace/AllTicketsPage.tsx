@@ -15,9 +15,9 @@ export const AllTicketsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSearch = searchParams.get('search') || '';
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [tickets, setTickets] = useState<Ticket[]>(() => AdminApiService.getCachedTickets() || []);
+  const [filteredTickets, setFilteredTickets] = useState<Ticket[]>(() => AdminApiService.getCachedTickets() || []);
+  const [isLoading, setIsLoading] = useState(() => !AdminApiService.getCachedTickets() || AdminApiService.getCachedTickets()!.length === 0);
   const [search, setSearch] = useState(urlSearch);
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -27,16 +27,18 @@ export const AllTicketsPage: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const fetchTickets = async (force = false) => {
-    setIsLoading(true);
+    if (!AdminApiService.getCachedTickets() || AdminApiService.getCachedTickets()!.length === 0) {
+      setIsLoading(true);
+    }
     const data = await AdminApiService.getTickets('all', force);
     setTickets(data);
     setIsLoading(false);
   };
 
   useEffect(() => {
-    fetchTickets();
+    fetchTickets(false);
     const handleTicketUpdated = () => {
-      fetchTickets(true);
+      fetchTickets(false);
     };
     window.addEventListener('ticket-updated', handleTicketUpdated);
     window.addEventListener('storage', handleTicketUpdated);

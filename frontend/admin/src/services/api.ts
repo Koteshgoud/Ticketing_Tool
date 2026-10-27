@@ -327,7 +327,7 @@ let _adminUsersInflight: Promise<User[]> | null = null;
 let _adminUsersCache: User[] | null = null;
 let _lastUsersFetchTime = 0;
 
-const CACHE_TTL_MS = 3000;
+const CACHE_TTL_MS = 30000;
 
 export function invalidateAdminCache(): void {
   _dashboardStatsCache = null;
@@ -341,6 +341,18 @@ export function invalidateAdminCache(): void {
 export const AdminApiService = {
   invalidateCache(): void {
     invalidateAdminCache();
+  },
+
+  getCachedTickets(): Ticket[] | null {
+    return _adminTicketsCache;
+  },
+
+  getCachedStats(): DashboardStats | null {
+    return _dashboardStatsCache;
+  },
+
+  getCachedUsers(): User[] | null {
+    return _adminUsersCache;
   },
 
   async getDashboardStats(force = false): Promise<DashboardStats | null> {

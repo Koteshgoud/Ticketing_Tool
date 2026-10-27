@@ -85,8 +85,10 @@ def _visible_user(
         if managed_ids is None:
             managed_ids = {str(m.get("id")) for m in teamlead_managed_employees(user)}
         return str(row.get("id") or "") in managed_ids
-    # Employees may see the people in their own department (for team-lead and
-    # employee pickers) plus themselves.
+    # Employees may see Team Leads from any department (to route tickets to the
+    # proper department lead), plus colleagues in their own department.
+    if normalize_role(row.get("role")) == ROLE_TEAMLEAD:
+        return True
     return _scopes_overlap(user.get("department"), row.get("department"))
 
 

@@ -79,13 +79,17 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setEscalations(loaded || []);
   }, []);
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
     const result = await ticketService.getTicketsDetailed();
     if (result.error) {
       setError(result.error);
-      setTickets([]);
-      setEscalations([]);
+      if (!silent) {
+        setTickets([]);
+        setEscalations([]);
+      }
     } else {
       setError(null);
       setTickets(result.tickets);
@@ -93,7 +97,9 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setEscalations(loaded || []);
     }
     await loadNotifications();
-    setIsLoading(false);
+    if (!silent) {
+      setIsLoading(false);
+    }
   }, [loadNotifications]);
 
   useEffect(() => {
@@ -108,32 +114,35 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    void refresh();
+    void refresh(false);
 
     // 1. Supabase Realtime Channel
     const channel = supabase
       .channel(`teamlead-realtime-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
-        void refresh();
+        ticketService.invalidateCache();
+        void refresh(true);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_activities' }, () => {
-        void refresh();
+        ticketService.invalidateCache();
+        void refresh(true);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, () => {
-        void refresh();
+        ticketService.invalidateCache();
+        void refresh(true);
       })
       .subscribe();
 
-    // 2. Controlled Polling Fallback (7 seconds, active when tab is visible)
+    // 2. Controlled Polling Fallback (15 seconds, non-destructive background sync)
     const pollInterval = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void refresh();
+        void refresh(true);
       }
-    }, 7000);
+    }, 15000);
 
     // 3. Local/Cross-tab update listener
     const handleTicketUpdated = () => {
-      void refresh();
+      void refresh(true);
     };
     window.addEventListener('ticket-updated', handleTicketUpdated);
     window.addEventListener('storage', handleTicketUpdated);

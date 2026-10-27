@@ -10,7 +10,7 @@ import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
 import { AttachmentFilePicker, type AttachedFile } from '../components/ui/AttachmentFilePicker';
 import { TeamLeadEmployeeSelector } from '../components/ui/TeamLeadEmployeeSelector';
-import type { TeamLeadItem, EmployeeItem } from '../services/organizationService';
+import { OrganizationService, type TeamLeadItem, type EmployeeItem } from '../services/organizationService';
 
 const DEPARTMENT_OPTIONS = [
   'IT Support',
@@ -37,6 +37,7 @@ export const CreateTicket: React.FC = () => {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [selectedEmployeeObjs, setSelectedEmployeeObjs] = useState<EmployeeItem[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdTicketId, setCreatedTicketId] = useState('');
@@ -61,6 +62,7 @@ export const CreateTicket: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setValidationError(null);
 
     // 17. VALIDATION
@@ -72,7 +74,8 @@ export const CreateTicket: React.FC = () => {
       setValidationError('Department is required');
       return;
     }
-    if (selectedTeamLeadIds.length === 0) {
+    const deptLeads = selectedDepartments.flatMap((d) => OrganizationService.getTeamLeadsByDepartment(d));
+    if (deptLeads.length > 0 && selectedTeamLeadIds.length === 0) {
       setValidationError('Team Lead is required');
       return;
     }
@@ -103,6 +106,7 @@ export const CreateTicket: React.FC = () => {
     });
     const attachmentStrings = uniqueFiles.map((f) => `${f.name} (${f.size})`);
 
+    setIsSubmitting(true);
     try {
       const newTicket = await EmployeeService.createTicket({
         title: subject.trim(),
@@ -139,6 +143,8 @@ export const CreateTicket: React.FC = () => {
       setIsSuccess(true);
     } catch (err: any) {
       setValidationError(err?.message || 'Could not create ticket. Please check your selections and try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -491,11 +497,11 @@ export const CreateTicket: React.FC = () => {
             <Button
               type="submit"
               variant="primary"
-              disabled={!subject.trim() || !description.trim() || selectedDepartments.length === 0}
+              disabled={isSubmitting || !subject.trim() || !description.trim() || selectedDepartments.length === 0}
               className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs"
             >
               <PlusCircle className="w-4 h-4 mr-1.5" />
-              Create Ticket
+              {isSubmitting ? 'Creating Ticket...' : 'Create Ticket'}
             </Button>
           </div>
         </form>

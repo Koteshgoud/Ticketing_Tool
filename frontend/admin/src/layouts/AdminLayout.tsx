@@ -11,24 +11,32 @@ export const AdminLayout: React.FC = () => {
 
   useEffect(() => {
     const notifyUpdate = () => {
-      AdminApiService.invalidateCache();
       window.dispatchEvent(new CustomEvent('ticket-updated'));
     };
 
     // 1. Supabase Realtime Channel
     const channel = supabase
       .channel('admin-realtime-tickets')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, notifyUpdate)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_activities' }, notifyUpdate)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, notifyUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        AdminApiService.invalidateCache();
+        notifyUpdate();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_activities' }, () => {
+        AdminApiService.invalidateCache();
+        notifyUpdate();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, () => {
+        AdminApiService.invalidateCache();
+        notifyUpdate();
+      })
       .subscribe();
 
-    // 2. Controlled Polling Fallback (7 seconds, active when tab is visible)
+    // 2. Controlled Polling Fallback (15 seconds, non-destructive background sync)
     const pollInterval = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         notifyUpdate();
       }
-    }, 7000);
+    }, 15000);
 
     return () => {
       window.clearInterval(pollInterval);

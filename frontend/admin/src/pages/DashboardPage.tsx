@@ -10,7 +10,7 @@ import type { Ticket, DashboardStats } from '../types';
 import { AdminApiService } from '../services/api';
 import { AttachmentFilePicker, type AttachedFile } from '../components/ui/AttachmentFilePicker';
 import { TeamLeadEmployeeSelector } from '../components/ui/TeamLeadEmployeeSelector';
-import type { TeamLeadItem, EmployeeItem } from '../services/organizationService';
+import { OrganizationService, type TeamLeadItem, type EmployeeItem } from '../services/organizationService';
 import {
   Ticket as TicketIcon,
   AlertTriangle,
@@ -37,11 +37,11 @@ const DEPARTMENT_OPTIONS = [
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(() => AdminApiService.getCachedStats());
+  const [tickets, setTickets] = useState<Ticket[]>(() => AdminApiService.getCachedTickets() || []);
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !AdminApiService.getCachedStats() && (!AdminApiService.getCachedTickets() || AdminApiService.getCachedTickets()!.length === 0));
   const [loadError, setLoadError] = useState(false);
 
   // Modal State for Admin Create Ticket
@@ -85,7 +85,9 @@ export const DashboardPage: React.FC = () => {
   );
 
   const loadData = async (force = false) => {
-    setIsLoading(true);
+    if (!stats && tickets.length === 0) {
+      setIsLoading(true);
+    }
     setLoadError(false);
     const [statsData, ticketsData] = await Promise.all([
       AdminApiService.getDashboardStats(force),
@@ -100,7 +102,9 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     const run = async (force = false) => {
-      setIsLoading(true);
+      if (!AdminApiService.getCachedStats() && (!AdminApiService.getCachedTickets() || AdminApiService.getCachedTickets()!.length === 0)) {
+        setIsLoading(true);
+      }
       setLoadError(false);
       try {
         const [statsData, ticketsData] = await Promise.all([
@@ -127,8 +131,7 @@ export const DashboardPage: React.FC = () => {
       }
     };
     const onTicketUpdated = () => {
-      AdminApiService.invalidateCache();
-      void run(true);
+      void run(false);
     };
 
     window.addEventListener('ticket-updated', onTicketUpdated);
@@ -153,7 +156,8 @@ export const DashboardPage: React.FC = () => {
       setValidationError('Department is required');
       return;
     }
-    if (selectedTeamLeadIds.length === 0) {
+    const deptLeads = selectedDepartments.flatMap((d) => OrganizationService.getTeamLeadsByDepartment(d));
+    if (deptLeads.length > 0 && selectedTeamLeadIds.length === 0) {
       setValidationError('Team Lead is required');
       return;
     }
@@ -233,10 +237,8 @@ export const DashboardPage: React.FC = () => {
       setTimeout(() => {
         setToastNotification(null);
       }, 4000);
-    } catch {
-      setToastNotification({
-        message: 'Ticket created, but email notification failed.',
-      });
+    } catch (err: any) {
+      setValidationError(err?.message || 'Could not create ticket. Please check your selections and try again.');
     } finally {
       setIsSubmitting(false);
     }

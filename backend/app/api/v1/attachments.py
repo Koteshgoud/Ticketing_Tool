@@ -204,21 +204,17 @@ def _record_for_file(
 
 
 def _disk_records(ticket_id: str, base_url: str) -> list[dict[str, Any]]:
-    """Reconstruct attachment records from files stored on disk.
-
-    This guarantees uploaded files remain visible/authorized even when the
-    ticket_attachments metadata table is unavailable (e.g. RLS without a
-    service role key). The ``_metadata.json`` sidecar supplies uploader, type,
-    and original name information when present.
-    """
-    folder = _ticket_folder(ticket_id)
-    metadata = _load_metadata(ticket_id)
+    clean = _validate_ticket_id(ticket_id)
+    folder = UPLOAD_BASE_DIR / clean
+    if not folder.is_dir():
+        return []
+    metadata = _load_metadata(clean)
     records: list[dict[str, Any]] = []
     for f in sorted(folder.iterdir()):
         if not f.is_file() or f.name == METADATA_FILE or f.name.startswith("."):
             continue
         att_id, _ = _split_stored_name(f.name)
-        records.append(_record_for_file(ticket_id, f, base_url, metadata.get(att_id)))
+        records.append(_record_for_file(clean, f, base_url, metadata.get(att_id)))
     return records
 
 

@@ -149,7 +149,8 @@ const CreateTicketModalContent: React.FC<{
       setError('Please specify the custom department name');
       return;
     }
-    if (selectedTeamLeadIds.length === 0) {
+    const deptLeads = selectedDepartments.flatMap((d) => OrganizationService.getTeamLeadsByDepartment(d));
+    if (deptLeads.length > 0 && selectedTeamLeadIds.length === 0) {
       setError('Team Lead is required');
       return;
     }

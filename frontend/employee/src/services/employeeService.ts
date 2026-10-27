@@ -146,7 +146,7 @@ function mapDbTicket(row: any): EmployeeTicket {
 }
 
 let _lastTicketsFetchTime = 0;
-const _TICKETS_CACHE_TTL = 3000; // 3 seconds cache
+const _TICKETS_CACHE_TTL = 30000; // 30 seconds cache
 let _fetchTicketsInflight: Promise<EmployeeTicket[]> | null = null;
 
 export const EmployeeService = {
