@@ -79,11 +79,14 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setEscalations(loaded || []);
   }, []);
 
-  const refresh = useCallback(async (silent = false) => {
+  const refresh = useCallback(async (silent = false, force = false) => {
     if (!silent) {
       setIsLoading(true);
     }
-    const result = await ticketService.getTicketsDetailed();
+    if (force) {
+      ticketService.invalidateCache();
+    }
+    const result = await ticketService.getTicketsDetailed(force);
     if (result.error) {
       setError(result.error);
       if (!silent) {
@@ -175,10 +178,9 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const setErrorFrom = useCallback((message: string) => setError(message), []);
 
   const createTicket = useCallback(async (data: CreateTicketInput): Promise<Ticket> => {
-    const firstTL = data.teamLeads?.[0];
     const firstEmp = data.taggedEmployees?.[0];
-    const initialAgentName = data.assignedAgent || firstTL?.name || firstEmp?.name || 'Unassigned';
-    const initialAgentId = data.assignedAgentId || firstTL?.id || firstEmp?.id || undefined;
+    const initialAgentName = data.assignedAgent || firstEmp?.name || 'Unassigned';
+    const initialAgentId = data.assignedAgentId || firstEmp?.id || undefined;
 
     const created = await ticketService.createTicket(
       {
@@ -196,7 +198,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         employeeEmail: currentUserEmail || undefined,
         assignedAgent: initialAgentName,
         assignedAgentId: initialAgentId,
-        assignedToType: firstTL ? 'teamlead' : firstEmp ? 'employee' : 'unassigned',
+        assignedToType: firstEmp ? 'employee' : 'unassigned',
         assignedBy: `${currentUserName} (Creator)`,
         status: 'Open',
         taggedMembers: data.taggedMembers,
@@ -259,7 +261,8 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setErrorFrom('Could not assign the ticket. Please try again.');
       throw new Error('Could not assign the ticket. Please try again.');
     }
-    await refresh(true);
+    ticketService.invalidateCache();
+    await refresh(true, true);
     await refreshTicketDetail(ticketId);
     await loadEscalations();
     if (typeof window !== 'undefined') {
@@ -273,7 +276,8 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setErrorFrom('Could not change the ticket priority. Please try again.');
       throw new Error('Could not change the ticket priority. Please try again.');
     }
-    await refresh(true);
+    ticketService.invalidateCache();
+    await refresh(true, true);
     await refreshTicketDetail(ticketId);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ticket-updated', { detail: { id: ticketId } }));

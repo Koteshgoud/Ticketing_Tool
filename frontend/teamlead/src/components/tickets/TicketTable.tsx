@@ -86,14 +86,6 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               const isResolvedOrClosed = ticket.status === 'Resolved' || ticket.status === 'Closed';
               const shortSla = formatSLAShort(ticket.slaRemaining);
 
-              const handleWorkOnTicketClick = (e: React.MouseEvent) => {
-                e.stopPropagation();
-                if (!isTeamLeadHandled) {
-                  workOnTicket(ticket.id);
-                  showToast('Ticket added to your Assigned Tickets.');
-                }
-                onSelectTicket(ticket);
-              };
 
               return (
                 <tr
@@ -188,18 +180,6 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                               <span>Reassign</span>
                             </button>
                           )
-                        )}
-
-                        {!isResolvedOrClosed && !isMyTable && (
-                          <button
-                            type="button"
-                            onClick={handleWorkOnTicketClick}
-                            className="px-2.5 py-1 text-xs font-semibold text-white bg-[#0284C7] hover:bg-[#0369a1] rounded transition-colors cursor-pointer flex items-center gap-1 shrink-0 shadow-2xs whitespace-nowrap"
-                            title="Work on Ticket"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Work on Ticket</span>
-                          </button>
                         )}
                       </div>
                     </td>

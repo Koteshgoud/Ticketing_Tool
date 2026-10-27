@@ -23,7 +23,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';
 import { PRIORITIES, STATUSES } from '../../utils/constants';
 import { ticketService } from '../../services/ticketService';
-import { authenticatedFetch, API_BASE } from '../../services/backendAuth';
+import { authenticatedFetch, API_BASE, withAccessToken } from '../../services/backendAuth';
 
 interface TicketDetailsModalProps {
   ticket: Ticket | null;
@@ -81,7 +81,12 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [escalationModalOpen, setEscalationModalOpen] = useState(false);
   const [escalationReasonInput, setEscalationReasonInput] = useState('');
-  const [previewAttachment, setPreviewAttachment] = useState<{ name: string; size?: string } | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<{
+    name: string;
+    size?: string;
+    viewUrl?: string;
+    downloadUrl?: string;
+  } | null>(null);
   const [modalAttachments, setModalAttachments] = useState<any[]>(ticket.attachments || []);
 
   useEffect(() => {
@@ -97,6 +102,23 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
       active = false;
     };
   }, [currentTicket.id]);
+
+  const handleViewAttachment = (att: any) => {
+    const cleanName = att.name.includes(' (') ? att.name.split(' (')[0] : att.name;
+    const tid = currentTicket.id || ticket.id;
+    const baseViewUrl =
+      att.viewUrl ||
+      (att.url
+        ? att.url.replace('/download', '/view')
+        : `${API_BASE}/tickets/${encodeURIComponent(tid)}/attachments/${encodeURIComponent(cleanName)}/view`);
+    const viewUrl = withAccessToken(baseViewUrl);
+    setPreviewAttachment({
+      name: att.name,
+      size: att.size,
+      viewUrl,
+      downloadUrl: att.url,
+    });
+  };
 
   const handleDownloadAttachment = async (attName: string, attUrl?: string) => {
     const cleanName = attName.includes(' (') ? attName.split(' (')[0] : attName;
@@ -359,7 +381,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setPreviewAttachment({ name: att.name, size: att.size })}
+                          onClick={() => handleViewAttachment(att)}
                           className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Eye className="w-3 h-3 text-slate-500" />
@@ -620,35 +642,57 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
       {/* Attachment Preview Modal */}
       {previewAttachment && (
         <div className="fixed inset-0 z-70 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 p-6 animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
               <div className="flex items-center space-x-2">
                 <FileText className="w-5 h-5 text-sky-600" />
-                <h3 className="font-bold text-slate-900 text-sm">{previewAttachment.name}</h3>
+                <h3 className="font-bold text-slate-900 text-sm truncate max-w-xs">{previewAttachment.name}</h3>
               </div>
               <button
                 onClick={() => setPreviewAttachment(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs font-mono text-slate-700 max-h-60 overflow-y-auto whitespace-pre-wrap">
-              {`File Name: ${previewAttachment.name}
-File Size: ${previewAttachment.size || 'N/A'}
-Ticket ID: ${ticket.id}
-Subject: ${ticket.subject}
-Author: ${ticket.assignedAgent || ticket.employee || 'Assigned Agent'}
-Status: Verified Enterprise Asset Preview
-File Hash / Integrity: OK`}
-            </div>
+            {(() => {
+              const ext = (previewAttachment.name.split('.').pop() || '').toLowerCase();
+              const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+              const isPdf = ext === 'pdf';
+              return (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 max-h-80 overflow-auto">
+                  {isImage && previewAttachment.viewUrl ? (
+                    <img
+                      src={previewAttachment.viewUrl}
+                      alt={previewAttachment.name}
+                      className="max-w-full max-h-72 mx-auto rounded-lg border border-slate-200 bg-white object-contain"
+                    />
+                  ) : isPdf && previewAttachment.viewUrl ? (
+                    <iframe
+                      src={previewAttachment.viewUrl}
+                      title={previewAttachment.name}
+                      className="w-full h-72 rounded-lg border border-slate-200 bg-white"
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs font-semibold text-slate-600">{previewAttachment.name}</p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Size: {previewAttachment.size || 'N/A'} — Inline preview is not available for this file type.
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">Use the Download button below to open it.</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
               <button
-                onClick={() => handleDownloadAttachment(previewAttachment.name)}
+                onClick={() => handleDownloadAttachment(previewAttachment.name, previewAttachment.downloadUrl || previewAttachment.viewUrl?.replace('/view', '/download'))}
                 className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
+                <span>Download File</span>
               </button>
               <button
                 onClick={() => setPreviewAttachment(null)}

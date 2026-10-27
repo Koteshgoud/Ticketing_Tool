@@ -27,17 +27,28 @@ export const SLARiskPage: React.FC = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [ticketData, userData] = await Promise.all([
-      AdminApiService.getTickets('sla-risk'),
-      AdminApiService.getUsers()
-    ]);
-    setTickets(ticketData);
-    setUsers(userData);
-    setIsLoading(false);
+    try {
+      const [ticketData, userData] = await Promise.all([
+        AdminApiService.getTickets('sla-risk', true),
+        AdminApiService.getUsers()
+      ]);
+      setTickets(ticketData);
+      setUsers(userData);
+    } catch (e) {
+      console.error('Failed to load SLA risk data:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    window.addEventListener('ticket-updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('ticket-updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, []);
 
   const handleOpenModal = (ticket: Ticket) => {

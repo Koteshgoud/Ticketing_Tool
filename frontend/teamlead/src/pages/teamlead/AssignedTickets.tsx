@@ -77,13 +77,18 @@ export const AssignedTickets: React.FC = () => {
   };
 
   // Filter ONLY tickets that are personally assigned to this Team Lead
-  const assignedTickets = (tickets || []).filter(
-    (t) =>
+  // (Requirement 6: Separate creator/requester info from assigned Team Lead.
+  // Tickets created by a Team Lead must not appear here unless specifically assigned to them.)
+  const assignedTickets = (tickets || []).filter((t) => {
+    const agent = String(t.assignedAgent || '').trim().toLowerCase();
+    if (!agent || agent === 'unassigned' || agent === 'none' || agent === 'null') return false;
+    const isAssigned =
       (t.assignedAgentId && user?.id && String(t.assignedAgentId) === String(user.id)) ||
       (t.assignedAgent && user?.name && t.assignedAgent.toLowerCase() === user.name.toLowerCase()) ||
       ((t as any).assignedAgentEmail && user?.email && String((t as any).assignedAgentEmail).toLowerCase() === user.email.toLowerCase()) ||
-      (t as any).is_assigned_to_me === true
-  );
+      (t as any).is_assigned_to_me === true;
+    return Boolean(isAssigned);
+  });
 
   const agentsList = (users || []).map((u) => u.name);
 

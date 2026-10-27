@@ -803,19 +803,19 @@ def ticket_stats(
                 in_progress_cnt += 1
             elif st == "pending":
                 pending_cnt += 1
-            elif st == "escalated":
+            if st == "escalated":
                 escalated_cnt += 1
+            else:
+                sla = compute_sla(t, now)
+                if sla["state"] == "risk":
+                    sla_risk_cnt += 1
+                elif sla["state"] == "breached":
+                    sla_breached_cnt += 1
 
             ag = _norm(t.get("assigned_agent"))
             ag_id = str(t.get("assigned_agent_id") or "")
             if (not ag or ag in ("unassigned", "none", "null")) and not ag_id:
                 unassigned_cnt += 1
-
-            sla = compute_sla(t, now)
-            if sla["state"] == "risk":
-                sla_risk_cnt += 1
-            elif sla["state"] == "breached":
-                sla_breached_cnt += 1
 
         if payload is not None and user is not None:
             if _same_person(user, payload, t, "assigned_agent"):

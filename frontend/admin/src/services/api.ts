@@ -568,25 +568,31 @@ export const AdminApiService = {
       mapped = await _adminTicketsInflight;
     }
 
+    const isActive = (t: Ticket) => !['resolved', 'closed'].includes((t.status || '').toLowerCase());
+    const isEscalated = (t: Ticket) => (t.status || '').toLowerCase() === 'escalated';
+
     if (!filterType || filterType === 'all') return mapped;
     if (filterType === 'open') {
-      return mapped.filter((t) => (t.status || '').toLowerCase() === 'open');
+      return mapped.filter((t) => isActive(t) && (t.status || '').toLowerCase() === 'open');
     }
     if (filterType === 'unassigned') {
       return mapped.filter(
         (t) =>
-          (!t.assignedTo || t.assignedTo.trim() === '' || t.assignedTo.toLowerCase() === 'unassigned') &&
-          !['resolved', 'closed'].includes((t.status || '').toLowerCase())
+          isActive(t) &&
+          (!t.assignedTo || t.assignedTo.trim() === '' || t.assignedTo.toLowerCase() === 'unassigned')
       );
     }
     if (filterType === 'escalated') {
-      return mapped.filter((t) => (t.status || '').toLowerCase() === 'escalated');
+      return mapped.filter((t) => isActive(t) && isEscalated(t));
     }
     if (filterType === 'sla-risk') {
-      return mapped.filter((t) => t.slaStatus === 'SLA Risk');
+      return mapped.filter((t) => isActive(t) && !isEscalated(t) && t.slaStatus === 'SLA Risk');
     }
     if (filterType === 'sla-breached') {
-      return mapped.filter((t) => t.slaStatus === 'SLA Breached');
+      return mapped.filter((t) => isActive(t) && !isEscalated(t) && t.slaStatus === 'SLA Breached');
+    }
+    if (filterType === 'resolved') {
+      return mapped.filter((t) => !isActive(t));
     }
     return mapped;
   },

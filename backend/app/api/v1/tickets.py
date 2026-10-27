@@ -200,7 +200,42 @@ def _notify(
         print(f"[tickets] notification skipped ({for_role}): {exc}")
 
 
+def _notify_batch(items: list[dict[str, Any]]) -> None:
+    """Persist multiple in-app notifications in a single batch roundtrip."""
+    if not items:
+        return
+    now_str = datetime.now(timezone.utc).isoformat()
+    rows = [
+        {
+            "id": f"notif-{int(time.time() * 1000)}-{random.randint(100, 999)}",
+            "ticket_id": item.get("ticket_id"),
+            "title": item.get("title"),
+            "message": item.get("message"),
+            "type": item.get("kind", "info"),
+            "for_role": item.get("for_role"),
+            "read": False,
+            "timestamp": now_str,
+        }
+        for item in items
+    ]
+    try:
+        get_supabase_admin_client().table("portal_notifications").insert(rows).execute()
+    except Exception as exc:  # pragma: no cover - depends on RLS configuration
+        print(f"[tickets] batch notification skipped: {exc}")
+
+
 def _find_user(user_id: str | None = None, email: str | None = None) -> dict[str, Any] | None:
+    if not user_id and not email:
+        return None
+    uid = str(user_id).strip().lower() if user_id else None
+    em = str(email).strip().lower() if email else None
+    # 1. Check in-memory cached user list first to eliminate redundant WAN latency
+    for u in fetch_all_users_cached():
+        if uid and str(u.get("id") or "").strip().lower() == uid:
+            return u
+        if em and str(u.get("email") or "").strip().lower() == em:
+            return u
+    # 2. Database query fallback
     sb = get_supabase_admin_client()
     try:
         if user_id:
@@ -533,7 +568,7 @@ def create_ticket(
     if agent_id:
         raw_emp_ids.add(agent_id)
 
-    # If agent was not specified explicitly, resolve from selected employees or team leads
+    # If agent was not specified explicitly, resolve from selected employees
     if not agent_id and raw_emp_ids:
         first_emp_id = next(iter(raw_emp_ids))
         emp_target = _find_user(user_id=first_emp_id)
@@ -541,15 +576,19 @@ def create_ticket(
             agent_id = str(emp_target.get("id") or "")
             agent = str(emp_target.get("name") or agent or "Employee")
             agent_email = str(emp_target.get("email") or "").lower() or None
-    if not agent_id and raw_tl_ids:
-        # If no employee was chosen, ticket is routed to the selected Team Lead
+            body.assigned_to_type = "employee"
+    elif not agent_id and raw_tl_ids:
+        # Route to selected Team Lead, UNLESS the selected Team Lead is the creator themselves.
+        # (Requirement 6: Team Lead created tickets must NOT automatically appear in their own Assigned Tickets)
         first_tl_id = next(iter(raw_tl_ids))
-        tl_target = _find_user(user_id=first_tl_id)
-        if tl_target:
-            agent_id = str(tl_target.get("id") or "")
-            agent = str(tl_target.get("name") or agent or "Team Lead")
-            agent_email = str(tl_target.get("email") or "").lower() or None
-            body.assigned_to_type = "teamlead"
+        creator_id = str(user.get("id") or "").strip()
+        if not (is_teamlead(payload) and first_tl_id == creator_id):
+            tl_target = _find_user(user_id=first_tl_id)
+            if tl_target:
+                agent_id = str(tl_target.get("id") or "")
+                agent = str(tl_target.get("name") or agent or "Team Lead")
+                agent_email = str(tl_target.get("email") or "").lower() or None
+                body.assigned_to_type = "teamlead"
 
     if raw_tl_ids:
         permitted_employee_ids: set[str] = set()
@@ -675,78 +714,81 @@ def create_ticket(
             raise HTTPException(status_code=502, detail=f"Could not create ticket: {exc}") from exc
     created = (res.data or [row])[0]
 
-    # Persist tagged and assigned members into ticket_tagged_members table
+    # Persist tagged and assigned members into ticket_tagged_members table (batched)
     tagged_to_insert = set()
     if raw_tl_ids:
         tagged_to_insert.update(raw_tl_ids)
     if raw_emp_ids:
         tagged_to_insert.update(raw_emp_ids)
-    for member_uid in tagged_to_insert:
-        try:
-            sb.table("ticket_tagged_members").insert({
+    if tagged_to_insert:
+        tagged_rows = [
+            {
                 "ticket_id": ticket_id,
                 "user_id": str(member_uid),
                 "tagged_by": str(user.get("id") or ""),
-            }).execute()
+            }
+            for member_uid in tagged_to_insert
+        ]
+        try:
+            sb.table("ticket_tagged_members").insert(tagged_rows).execute()
         except Exception as exc:
-            print(f"[tickets] could not insert tagged member {member_uid}: {exc}")
+            print(f"[tickets] batch insert tagged members skipped: {exc}")
 
     invalidate_tickets_cache()
     _log_activity(ticket_id, _actor_name(user), "Ticket created")
 
-    # Notify the requester (targeted to their user id)
+    # Batch build notifications to eliminate 6-8 sequential WAN queries
+    notifications_to_send: list[dict[str, Any]] = []
     if employee_id:
-        _notify(
-            title=f"Ticket Created: {ticket_id}",
-            message=f"Your ticket \"{row['subject']}\" was created and is now {row['status']}.",
-            for_role=f"user:{employee_id}",
-            ticket_id=ticket_id,
-            kind="success",
-        )
-    # Notify the assigned agent
+        notifications_to_send.append({
+            "title": f"Ticket Created: {ticket_id}",
+            "message": f"Your ticket \"{row['subject']}\" was created and is now {row['status']}.",
+            "for_role": f"user:{employee_id}",
+            "ticket_id": ticket_id,
+            "kind": "success",
+        })
     if agent_id:
-        _notify(
-            title=f"Ticket Assigned: {ticket_id}",
-            message=f"You were assigned \"{row['subject']}\" ({ticket_id}).",
-            for_role=f"user:{agent_id}",
-            ticket_id=ticket_id,
-            kind="warning",
-        )
-    # Direct notifications for all tagged Team Leads
+        notifications_to_send.append({
+            "title": f"Ticket Assigned: {ticket_id}",
+            "message": f"You were assigned \"{row['subject']}\" ({ticket_id}).",
+            "for_role": f"user:{agent_id}",
+            "ticket_id": ticket_id,
+            "kind": "warning",
+        })
     for tl_id in raw_tl_ids:
         if tl_id != str(user.get("id") or "") and tl_id != agent_id:
-            _notify(
-                title=f"Tagged in Ticket: {ticket_id}",
-                message=f"You were tagged on ticket \"{row['subject']}\" ({ticket_id}) in {department or 'General'}.",
-                for_role=f"user:{tl_id}",
-                ticket_id=ticket_id,
-                kind="info",
-            )
-    # Direct notifications for all tagged Employees
+            notifications_to_send.append({
+                "title": f"Tagged in Ticket: {ticket_id}",
+                "message": f"You were tagged on ticket \"{row['subject']}\" ({ticket_id}) in {department or 'General'}.",
+                "for_role": f"user:{tl_id}",
+                "ticket_id": ticket_id,
+                "kind": "info",
+            })
     for emp_id in raw_emp_ids:
         if emp_id != str(user.get("id") or "") and emp_id != agent_id:
-            _notify(
-                title=f"Tagged in Ticket: {ticket_id}",
-                message=f"You were tagged on ticket \"{row['subject']}\" ({ticket_id}).",
-                for_role=f"user:{emp_id}",
-                ticket_id=ticket_id,
-                kind="info",
-            )
+            notifications_to_send.append({
+                "title": f"Tagged in Ticket: {ticket_id}",
+                "message": f"You were tagged on ticket \"{row['subject']}\" ({ticket_id}).",
+                "for_role": f"user:{emp_id}",
+                "ticket_id": ticket_id,
+                "kind": "info",
+            })
     if department:
-        _notify(
-            title=f"New Ticket: {ticket_id}",
-            message=f"{row['employee']} raised \"{row['subject']}\" for {department}.",
-            for_role=f"dept:{department}",
-            ticket_id=ticket_id,
-            kind="info",
-        )
-    _notify(
-        title=f"New Ticket: {ticket_id}",
-        message=f"{row['employee']} raised \"{row['subject']}\" ({row['priority']} priority).",
-        for_role="admin",
-        ticket_id=ticket_id,
-        kind="info",
-    )
+        notifications_to_send.append({
+            "title": f"New Ticket: {ticket_id}",
+            "message": f"{row['employee']} raised \"{row['subject']}\" for {department}.",
+            "for_role": f"dept:{department}",
+            "ticket_id": ticket_id,
+            "kind": "info",
+        })
+    notifications_to_send.append({
+        "title": f"New Ticket: {ticket_id}",
+        "message": f"{row['employee']} raised \"{row['subject']}\" ({row['priority']} priority).",
+        "for_role": "admin",
+        "ticket_id": ticket_id,
+        "kind": "info",
+    })
+    _notify_batch(notifications_to_send)
 
     return serialize_ticket(created, payload=payload, user=user)
 
@@ -1020,14 +1062,25 @@ def change_status(
         raise HTTPException(status_code=403, detail="You cannot change this ticket")
 
     now = datetime.now(timezone.utc).isoformat()
-    updates: dict[str, Any] = {"status": body.status.strip(), "updated_at": now}
-    if body.status.strip().lower() == "resolved":
+    new_status = body.status.strip()
+    updates: dict[str, Any] = {"status": new_status, "updated_at": now}
+    if new_status.lower() == "resolved":
         updates["resolved_at"] = now
-    elif body.status.strip().lower() == "closed":
+    elif new_status.lower() == "closed":
         updates["closed_at"] = now
 
+    from app.services.access import compute_sla
+    new_sla = compute_sla({**ticket, **updates})
+    updates["sla_status"] = new_sla["status"]
+
     sb = get_supabase_admin_client()
-    res = sb.table("tickets").update(updates).eq("id", ticket_id).execute()
+    canonical_id = str(ticket.get("id") or ticket_id)
+    try:
+        res = sb.table("tickets").update(updates).eq("id", canonical_id).execute()
+        if not (res.data or []):
+            res = sb.table("tickets").update(updates).eq("ticket_number", ticket_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Database update failed: {exc}") from exc
     if not (res.data or []):
         raise HTTPException(status_code=404, detail="Ticket not found or update failed")
 
@@ -1115,15 +1168,25 @@ def resolve_ticket(
 
     now = datetime.now(timezone.utc).isoformat()
     summary = body.resolution_summary.strip() or "Resolved."
+
+    from app.services.access import compute_sla
+    new_sla = compute_sla({**ticket, "status": "Resolved", "resolved_at": now})
+    updates = {
+        "status": "Resolved",
+        "resolution_summary": summary,
+        "resolved_at": now,
+        "sla_status": new_sla["status"],
+        "updated_at": now,
+    }
+
     sb = get_supabase_admin_client()
-    res = sb.table("tickets").update(
-        {
-            "status": "Resolved",
-            "resolution_summary": summary,
-            "resolved_at": now,
-            "updated_at": now,
-        }
-    ).eq("id", ticket_id).execute()
+    canonical_id = str(ticket.get("id") or ticket_id)
+    try:
+        res = sb.table("tickets").update(updates).eq("id", canonical_id).execute()
+        if not (res.data or []):
+            res = sb.table("tickets").update(updates).eq("ticket_number", ticket_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Database update failed: {exc}") from exc
     if not (res.data or []):
         raise HTTPException(status_code=404, detail="Ticket not found or update failed")
 

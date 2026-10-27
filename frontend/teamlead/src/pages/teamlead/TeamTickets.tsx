@@ -45,8 +45,10 @@ export const TeamTickets: React.FC = () => {
       t.assignedAgent.toLowerCase() === 'unassigned');
 
   const isTicketSLARisk = (t: Ticket) => {
+    const st = (t.status || '').toLowerCase();
+    if (st === 'resolved' || st === 'closed' || st === 'escalated') return false;
     const s = (t.slaStatus || '').toLowerCase();
-    return s.includes('risk') || s.includes('breach') || s.includes('approach');
+    return s === 'at risk' || s === 'sla risk' || s.includes('risk');
   };
 
   // Synchronize URL query parameters (?filter=, ?status=, ?sla=, ?search=)

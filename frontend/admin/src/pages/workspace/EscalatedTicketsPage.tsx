@@ -27,14 +27,19 @@ export const EscalatedTicketsPage: React.FC = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [ticketData, userData] = await Promise.all([
-      AdminApiService.getTickets('escalated'),
-      AdminApiService.getUsers()
-    ]);
-    const uniqueTickets = Array.from(new Map(ticketData.map(t => [t.id, t])).values());
-    setTickets(uniqueTickets);
-    setUsers(userData);
-    setIsLoading(false);
+    try {
+      const [ticketData, userData] = await Promise.all([
+        AdminApiService.getTickets('escalated', true),
+        AdminApiService.getUsers()
+      ]);
+      const uniqueTickets = Array.from(new Map(ticketData.map(t => [t.id, t])).values());
+      setTickets(uniqueTickets);
+      setUsers(userData);
+    } catch (e) {
+      console.error('Failed to load escalated tickets data:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {

@@ -50,8 +50,12 @@ export const TeamLeadDashboard: React.FC = () => {
     [],
   );
 
-  // Server-computed SLA status: only "At Risk" is risk; breached is separate.
-  const isTicketSLARisk = useCallback((t: Ticket) => t.slaStatus === 'At Risk', []);
+  // Server-computed SLA status: only "At Risk" is risk; breached, resolved, and escalated are separate.
+  const isTicketSLARisk = useCallback((t: Ticket) => {
+    const st = (t.status || '').toLowerCase();
+    if (st === 'resolved' || st === 'closed' || st === 'escalated') return false;
+    return t.slaStatus === 'At Risk';
+  }, []);
 
   // 1. Calculate Summary Card Metrics. Memoised so the counters are not
   // recomputed on every unrelated re-render of the dashboard.
