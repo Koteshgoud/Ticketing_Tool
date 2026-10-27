@@ -436,6 +436,13 @@ def ticket_visible(payload: dict[str, Any], user: dict[str, Any], ticket: dict[s
         if tl_team and _scopes_overlap(tl_team, ticket.get("assigned_team_id")):
             return True
 
+        # 4b. Explicitly routed to this Team Lead via team_lead_id / team_lead_ids
+        tl_ids_on_ticket = [str(x) for x in (ticket.get("team_lead_ids") or [])]
+        if str(ticket.get("team_lead_id") or ""):
+            tl_ids_on_ticket.append(str(ticket.get("team_lead_id")))
+        if tl_id and tl_id in tl_ids_on_ticket:
+            return True
+
         # 5. Tagged members
         tagged = [str(x) for x in (ticket.get("tagged_member_ids") or [])]
         if tl_id and tl_id in tagged:

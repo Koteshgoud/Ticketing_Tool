@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useTickets } from '../../hooks/useTickets';
 import { useAuth } from '../../hooks/useAuth';
 import { ticketService, type AttachmentRecord } from '../../services/ticketService';
@@ -34,6 +34,22 @@ import {
 export const TicketDetailsPage: React.FC = () => {
   const { ticketId } = useParams<{ ticketId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isReadOnly = searchParams.get('mode') === 'view';
+
+  const switchToWorkMode = () => {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set('mode', 'work');
+    navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
+  };
+
+  const switchToViewMode = () => {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.set('mode', 'view');
+    navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
+  };
+
   const { tickets, updateStatus, changePriority, addComment, escalateTicket, resolveTicket } = useTickets();
   const { user, role } = useAuth();
 
@@ -285,70 +301,97 @@ export const TicketDetailsPage: React.FC = () => {
 
         {/* Right: Action Buttons Row */}
         <div className="flex items-center flex-wrap gap-2">
-          {/* Update Status Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setIsUpdateStatusOpen(!isUpdateStatusOpen)}
-              className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
-              <span>Update Status</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
+          {isReadOnly ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                Read-Only View
+              </span>
+              <button
+                type="button"
+                onClick={switchToWorkMode}
+                className="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                Work on Ticket
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={switchToViewMode}
+                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 font-semibold text-xs rounded-xl border border-slate-200 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Eye className="w-3.5 h-3.5 mr-1" />
+                <span>View Only</span>
+              </button>
 
-            {isUpdateStatusOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setIsUpdateStatusOpen(false)} />
-                <div className="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-lg border border-slate-200 z-30 py-1 text-xs animate-in fade-in zoom-in-95 duration-100">
-                  <p className="px-3 py-1.5 font-bold text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                    Set Ticket Status
-                  </p>
-                  {(['Open', 'In Progress', 'Pending', 'Resolved', 'Closed'] as TicketStatus[]).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => handleUpdateStatus(s)}
-                      className={`w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between cursor-pointer ${
-                        ticket.status === s ? 'font-bold text-sky-600 bg-sky-50/50' : 'text-slate-700'
-                      }`}
-                    >
-                      <span>{s}</span>
-                      {ticket.status === s && <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+              {/* Update Status Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsUpdateStatusOpen(!isUpdateStatusOpen)}
+                  className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
+                  <span>Update Status</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                </button>
 
-          {/* Escalate Button */}
-          {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && ticket.status !== 'Escalated' && (
-            <button
-              onClick={() => setIsEscalateModalOpen(true)}
-              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-              <span>Escalate</span>
-            </button>
-          )}
+                {isUpdateStatusOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setIsUpdateStatusOpen(false)} />
+                    <div className="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-lg border border-slate-200 z-30 py-1 text-xs animate-in fade-in zoom-in-95 duration-100">
+                      <p className="px-3 py-1.5 font-bold text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                        Set Ticket Status
+                      </p>
+                      {(['Open', 'In Progress', 'Pending', 'Resolved', 'Closed'] as TicketStatus[]).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => handleUpdateStatus(s)}
+                          className={`w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between cursor-pointer ${
+                            ticket.status === s ? 'font-bold text-sky-600 bg-sky-50/50' : 'text-slate-700'
+                          }`}
+                        >
+                          <span>{s}</span>
+                          {ticket.status === s && <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
 
-          {/* Add Attachment Button */}
-          <button
-            onClick={() => setIsAttachmentModalOpen(true)}
-            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-          >
-            <Paperclip className="w-3.5 h-3.5 text-slate-500" />
-            <span>Add Attachment</span>
-          </button>
+              {/* Escalate Button */}
+              {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && ticket.status !== 'Escalated' && (
+                <button
+                  onClick={() => setIsEscalateModalOpen(true)}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Escalate</span>
+                </button>
+              )}
 
-          {/* Mark as Resolved Button */}
-          {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
-            <button
-              onClick={() => setIsResolveModalOpen(true)}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Mark as Resolved</span>
-            </button>
+              {/* Add Attachment Button */}
+              <button
+                onClick={() => setIsAttachmentModalOpen(true)}
+                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <Paperclip className="w-3.5 h-3.5 text-slate-500" />
+                <span>Add Attachment</span>
+              </button>
+
+              {/* Mark as Resolved Button */}
+              {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
+                <button
+                  onClick={() => setIsResolveModalOpen(true)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Mark as Resolved</span>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -673,45 +716,60 @@ export const TicketDetailsPage: React.FC = () => {
               )}
             </div>
 
-            {/* Comment Form */}
-            <form onSubmit={handlePostComment} className="pt-3 border-t border-slate-100">
-              {role === 'teamlead' && (
-                <div className="flex items-center space-x-2 mb-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isInternalNote}
-                      onChange={(e) => setIsInternalNote(e.target.checked)}
-                      className="rounded-xs text-sky-600 focus:ring-sky-500"
-                    />
-                    <Lock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Add as Internal Team Note (Hidden from employee)</span>
-                  </label>
-                </div>
-              )}
+            {/* Comment Form or Read-Only Notice */}
+            {!isReadOnly ? (
+              <form onSubmit={handlePostComment} className="pt-3 border-t border-slate-100">
+                {role === 'teamlead' && (
+                  <div className="flex items-center space-x-2 mb-2">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isInternalNote}
+                        onChange={(e) => setIsInternalNote(e.target.checked)}
+                        className="rounded-xs text-sky-600 focus:ring-sky-500"
+                      />
+                      <Lock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Add as Internal Team Note (Hidden from employee)</span>
+                    </label>
+                  </div>
+                )}
 
-              <div className="relative">
-                <textarea
-                  rows={3}
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder={
-                    isInternalNote
-                      ? 'Type internal team note...'
-                      : 'Type response or update...'
-                  }
-                  className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 focus:bg-white resize-none"
-                />
+                <div className="relative">
+                  <textarea
+                    rows={3}
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder={
+                      isInternalNote
+                        ? 'Type internal team note...'
+                        : 'Type response or update...'
+                    }
+                    className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 focus:bg-white resize-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newComment.trim()}
+                    className="absolute right-3 bottom-3 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors shadow-xs cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    Post Note
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <p className="text-xs text-slate-500 italic">
+                  This ticket is open in read-only view. Edit controls and comment submission are hidden.
+                </p>
                 <button
-                  type="submit"
-                  disabled={!newComment.trim()}
-                  className="absolute right-3 bottom-3 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 transition-colors shadow-xs cursor-pointer"
+                  type="button"
+                  onClick={switchToWorkMode}
+                  className="px-3 py-1.5 text-xs font-semibold text-sky-600 border border-sky-200 bg-white hover:bg-sky-50 rounded-lg cursor-pointer"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  Post Note
+                  Work on Ticket
                 </button>
               </div>
-            </form>
+            )}
           </div>
         )}
 

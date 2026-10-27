@@ -28,12 +28,20 @@ import { authenticatedFetch, API_BASE } from '../../services/backendAuth';
 interface TicketDetailsModalProps {
   ticket: Ticket | null;
   onClose: () => void;
+  isReadOnly?: boolean;
+  onWorkOnTicket?: (ticket: Ticket) => void;
 }
 
-export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, onClose }) => {
+export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
+  ticket,
+  onClose,
+  isReadOnly = true,
+  onWorkOnTicket,
+}) => {
   if (!ticket) return null;
 
   const { role, user, users } = useAuth();
+  const [isReadOnlyMode, setIsReadOnlyMode] = useState<boolean>(isReadOnly);
   const {
     updateStatus,
     assignAgent,
@@ -163,12 +171,44 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
             </div>
             <h2 className="text-xl font-bold text-slate-900">{currentTicket.subject}</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isReadOnlyMode ? (
+              <>
+                <span className="px-2.5 py-1 text-[11px] font-bold bg-slate-100 text-slate-600 rounded-lg border border-slate-200">
+                  Read-Only View
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onWorkOnTicket) {
+                      onWorkOnTicket(currentTicket);
+                    } else {
+                      setIsReadOnlyMode(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-[#0284C7] hover:bg-[#0369a1] text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Work on Ticket</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsReadOnlyMode(true)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs flex items-center gap-1.5 border border-slate-200 cursor-pointer transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                <span>View Mode</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Content Grid */}
@@ -258,45 +298,47 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
                   )}
                 </div>
 
-                {/* Reply Form */}
-                <form onSubmit={handlePostComment} className="pt-2 border-t border-slate-200">
-                  {role === 'teamlead' && (
-                    <div className="flex items-center space-x-2 mb-2">
-                      <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isInternalNote}
-                          onChange={(e) => setIsInternalNote(e.target.checked)}
-                          className="rounded-xs text-sky-600 focus:ring-sky-500"
-                        />
-                        <Lock className="w-3.5 h-3.5 text-amber-600" />
-                        Add as Internal Team Note (Hidden from employee)
-                      </label>
-                    </div>
-                  )}
+                {/* Reply Form (Hidden in Read-Only View) */}
+                {!isReadOnlyMode && (
+                  <form onSubmit={handlePostComment} className="pt-2 border-t border-slate-200">
+                    {role === 'teamlead' && (
+                      <div className="flex items-center space-x-2 mb-2">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isInternalNote}
+                            onChange={(e) => setIsInternalNote(e.target.checked)}
+                            className="rounded-xs text-sky-600 focus:ring-sky-500"
+                          />
+                          <Lock className="w-3.5 h-3.5 text-amber-600" />
+                          Add as Internal Team Note (Hidden from employee)
+                        </label>
+                      </div>
+                    )}
 
-                  <div className="relative">
-                    <textarea
-                      rows={3}
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder={
-                        isInternalNote
-                          ? 'Write an internal note for support team...'
-                          : 'Type your message or response...'
-                      }
-                      className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 focus:bg-white resize-none"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!newComment.trim()}
-                      className="absolute right-3 bottom-3 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50 transition-colors shadow-xs"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      Post
-                    </button>
-                  </div>
-                </form>
+                    <div className="relative">
+                      <textarea
+                        rows={3}
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder={
+                          isInternalNote
+                            ? 'Write an internal note for support team...'
+                            : 'Type your message or response...'
+                        }
+                        className="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 focus:bg-white resize-none"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!newComment.trim()}
+                        className="absolute right-3 bottom-3 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50 transition-colors shadow-xs"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        Post
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             )}
 
@@ -419,8 +461,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({ ticket, 
               )}
             </div>
 
-            {/* Team Lead Controls */}
-            {role === 'teamlead' && (
+            {/* Team Lead Controls (Only in Work on Ticket Mode) */}
+            {!isReadOnlyMode && role === 'teamlead' && (
               <div className="space-y-3 bg-white p-3.5 rounded-xl border border-slate-200">
                 <p className="font-bold text-slate-900 border-b border-slate-100 pb-1.5 flex items-center gap-1.5">
                   <UserPlus className="w-4 h-4 text-sky-600" />

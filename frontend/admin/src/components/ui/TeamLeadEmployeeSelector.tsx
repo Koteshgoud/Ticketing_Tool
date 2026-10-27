@@ -80,6 +80,50 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
     });
   }, [selectedTeamLeadIds]);
 
+  // Ensure selected Team Leads strictly belong to active selected departments
+  useEffect(() => {
+    if (role === 'teamlead') return;
+    const validLeadIds: string[] = [];
+    selectedDepartments.forEach((dept) => {
+      const leads = OrganizationService.getTeamLeadsByDepartment(dept);
+      leads.forEach((l) => validLeadIds.push(l.id));
+    });
+    const validLeadIdSet = new Set(validLeadIds);
+
+    const prunedLeadIds = selectedTeamLeadIds.filter((id) => validLeadIdSet.has(id));
+    if (prunedLeadIds.length !== selectedTeamLeadIds.length) {
+      const prunedLeadObjs = prunedLeadIds
+        .map((id) => OrganizationService.getTeamLeadById(id))
+        .filter((l): l is TeamLeadItem => !!l);
+      onSelectedTeamLeadsChange(prunedLeadIds, prunedLeadObjs);
+    }
+  }, [selectedDepartments, selectedTeamLeadIds, role]);
+
+  // Prune any tagged employees that do not belong to the currently selected Team Leads
+  useEffect(() => {
+    if (selectedTeamLeadIds.length === 0) {
+      if (selectedEmployeeIds.length > 0) {
+        onSelectedEmployeesChange([], []);
+      }
+      return;
+    }
+    const allowedEmpIds = new Set<string>();
+    selectedTeamLeadIds.forEach((lid) => {
+      const emps = employeesByLead[lid] || [];
+      emps.forEach((e) => allowedEmpIds.add(e.id));
+    });
+    const allLeadsLoaded = selectedTeamLeadIds.every((lid) => !!employeesByLead[lid] && !loadingByLead[lid]);
+    if (allLeadsLoaded) {
+      const prunedEmpIds = selectedEmployeeIds.filter((id) => allowedEmpIds.has(id));
+      if (prunedEmpIds.length !== selectedEmployeeIds.length) {
+        const prunedEmpObjs = prunedEmpIds
+          .map((id) => OrganizationService.getEmployeeById(id))
+          .filter((e): e is EmployeeItem => !!e);
+        onSelectedEmployeesChange(prunedEmpIds, prunedEmpObjs);
+      }
+    }
+  }, [selectedTeamLeadIds, employeesByLead, loadingByLead, selectedEmployeeIds]);
+
   // Search state stored per Team Lead ID to allow independent search fields
   const [searchQueries, setSearchQueries] = useState<Record<string, string>>({});
 

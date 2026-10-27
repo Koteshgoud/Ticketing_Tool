@@ -123,8 +123,9 @@ export const AllTicketsPage: React.FC = () => {
       accessorKey: 'ticketNumber',
       cell: (row) => (
         <button
-          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=all-tickets`)}
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=view&from=all-tickets`)}
           className="font-mono text-[#2563EB] font-semibold text-[12.5px] hover:underline text-left cursor-pointer"
+          title="View Ticket (Read-only)"
         >
           {row.ticketNumber}
         </button>
@@ -182,10 +183,20 @@ export const AllTicketsPage: React.FC = () => {
             variant="ghost"
             size="sm"
             icon={<Eye className="w-3.5 h-3.5" />}
-            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=all-tickets`)}
-            title="View Details"
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=view&from=all-tickets`)}
+            title="Read-only View"
+            className="text-xs"
           >
-            View Ticket
+            View
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=work&from=all-tickets`)}
+            title="Work on Ticket"
+            className="text-xs font-semibold text-[#0284C7] border-sky-200 hover:bg-sky-50"
+          >
+            Work on Ticket
           </Button>
         </div>
       )

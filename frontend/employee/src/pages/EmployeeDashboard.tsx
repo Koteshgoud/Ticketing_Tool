@@ -59,14 +59,18 @@ export const EmployeeDashboard: React.FC = () => {
     {
       header: 'Ticket ID',
       accessorKey: 'ticketNumber',
-      cell: (row) => (
-        <button
-          onClick={() => navigate(row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`)}
-          className="font-mono text-[#0284C7] font-bold text-xs hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
-        >
-          {row.ticketNumber}
-        </button>
-      ),
+      cell: (row) => {
+        const targetPath = row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`;
+        return (
+          <button
+            onClick={() => navigate(`${targetPath}?mode=view`)}
+            className="font-mono text-[#0284C7] font-bold text-xs hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+            title="View Ticket (Read-only)"
+          >
+            {row.ticketNumber}
+          </button>
+        );
+      },
     },
     {
       header: 'Subject',
@@ -101,16 +105,32 @@ export const EmployeeDashboard: React.FC = () => {
     },
     {
       header: 'Action',
-      cell: (row) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`)}
-          icon={<Eye className="w-3.5 h-3.5" />}
-        >
-          View
-        </Button>
-      ),
+      cell: (row) => {
+        const targetPath = row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`;
+        return (
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(`${targetPath}?mode=view`)}
+              icon={<Eye className="w-3.5 h-3.5" />}
+              title="Read-only View"
+              className="text-xs"
+            >
+              View
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`${targetPath}?mode=work`)}
+              className="border-sky-200 text-[#0284C7] hover:bg-sky-50 text-xs font-semibold cursor-pointer"
+              title="Work on Ticket"
+            >
+              Work on Ticket
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 

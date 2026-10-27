@@ -24,6 +24,7 @@ import {
   AlertCircle,
   X,
   Inbox,
+  Eye,
 } from 'lucide-react';
 
 const DEPARTMENT_OPTIONS = [
@@ -365,9 +366,9 @@ export const DashboardPage: React.FC = () => {
       accessorKey: 'ticketNumber',
       cell: (row) => (
         <button
-          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=view`)}
           className="font-mono text-[#0284C7] font-semibold text-[12.5px] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
-          title="Click to view ticket details"
+          title="Click to view ticket details (Read-only)"
         >
           {row.ticketNumber}
         </button>
@@ -408,6 +409,32 @@ export const DashboardPage: React.FC = () => {
     {
       header: 'Updated Time',
       cell: (row) => <span className="text-[11.5px] text-slate-500">{row.createdAt}</span>
+    },
+    {
+      header: 'Actions',
+      cell: (row) => (
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Eye className="w-3.5 h-3.5" />}
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=view`)}
+            title="Read-only View"
+            className="text-xs"
+          >
+            View
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=work`)}
+            title="Work on Ticket"
+            className="text-xs font-semibold text-[#0284C7] border-sky-200 hover:bg-sky-50"
+          >
+            Work on Ticket
+          </Button>
+        </div>
+      )
     }
   ];
 

@@ -434,6 +434,8 @@ def create_ticket(
             if target:
                 employee_name = employee_name or str(target.get("name") or "")
                 employee_email = employee_email or str(target.get("email") or "").lower()
+        if not employee_id:
+            employee_id = str(user.get("id") or "")
         if not employee_name and not employee_email:
             employee_name = _actor_name(user)
             employee_email = str(user.get("email") or "").lower() or None
@@ -615,7 +617,14 @@ def create_ticket(
     try:
         res = sb.table("tickets").insert(row).execute()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not create ticket: {exc}") from exc
+        err_msg = str(exc)
+        if any(term in err_msg for term in ("ConnectionTerminated", "RemoteProtocolError", "ConnectError", "BrokenPipe")):
+            from app.db.supabase import reset_supabase_clients
+            reset_supabase_clients()
+            sb = get_supabase_admin_client()
+            res = sb.table("tickets").insert(row).execute()
+        else:
+            raise HTTPException(status_code=502, detail=f"Could not create ticket: {exc}") from exc
     created = (res.data or [row])[0]
 
     # Persist tagged and assigned members into ticket_tagged_members table
@@ -637,8 +646,7 @@ def create_ticket(
     invalidate_tickets_cache()
     _log_activity(ticket_id, _actor_name(user), "Ticket created")
 
-    # Notify the requester (targeted to their user id) and the responsible
-    # Team Lead queue (department-scoped).
+    # Notify the requester (targeted to their user id)
     if employee_id:
         _notify(
             title=f"Ticket Created: {ticket_id}",
@@ -647,6 +655,7 @@ def create_ticket(
             ticket_id=ticket_id,
             kind="success",
         )
+    # Notify the assigned agent
     if agent_id:
         _notify(
             title=f"Ticket Assigned: {ticket_id}",
@@ -655,6 +664,26 @@ def create_ticket(
             ticket_id=ticket_id,
             kind="warning",
         )
+    # Direct notifications for all tagged Team Leads
+    for tl_id in raw_tl_ids:
+        if tl_id != str(user.get("id") or "") and tl_id != agent_id:
+            _notify(
+                title=f"Tagged in Ticket: {ticket_id}",
+                message=f"You were tagged on ticket \"{row['subject']}\" ({ticket_id}) in {department or 'General'}.",
+                for_role=f"user:{tl_id}",
+                ticket_id=ticket_id,
+                kind="info",
+            )
+    # Direct notifications for all tagged Employees
+    for emp_id in raw_emp_ids:
+        if emp_id != str(user.get("id") or "") and emp_id != agent_id:
+            _notify(
+                title=f"Tagged in Ticket: {ticket_id}",
+                message=f"You were tagged on ticket \"{row['subject']}\" ({ticket_id}).",
+                for_role=f"user:{emp_id}",
+                ticket_id=ticket_id,
+                kind="info",
+            )
     if department:
         _notify(
             title=f"New Ticket: {ticket_id}",
@@ -1077,6 +1106,8 @@ def add_comment(
 ) -> dict[str, Any]:
     payload, user = context
     ticket = _require_visible(payload, user, ticket_id)
+    if not can_manage_ticket(payload, user, ticket):
+        raise HTTPException(status_code=403, detail="You cannot comment on this ticket")
     role = role_of(payload)
     is_internal = bool(body.is_internal)
     if is_internal and role == "employee":

@@ -59,8 +59,9 @@ export const MyTicketsPage: React.FC = () => {
       cell: (row) => (
         <button
           type="button"
-          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=my-tickets`)}
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=view&from=my-tickets`)}
           className="font-mono text-xs font-bold text-[#0284C7] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+          title="View Ticket (Read-only)"
         >
           {row.ticketNumber}
         </button>
@@ -100,15 +101,27 @@ export const MyTicketsPage: React.FC = () => {
     {
       header: 'Action',
       cell: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/admin/workspace/tickets/${row.id}?from=my-tickets`)}
-          className="border-slate-200 hover:border-[#0284C7] text-slate-600 hover:text-[#0284C7] text-xs font-medium cursor-pointer"
-        >
-          <Eye className="w-3.5 h-3.5 mr-1" />
-          View
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=view&from=my-tickets`)}
+            className="border-slate-200 hover:border-[#0284C7] text-slate-600 hover:text-[#0284C7] text-xs font-medium cursor-pointer"
+            title="Read-only View"
+          >
+            <Eye className="w-3.5 h-3.5 mr-1" />
+            View
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/admin/workspace/tickets/${row.id}?mode=work&from=my-tickets`)}
+            className="border-sky-200 text-[#0284C7] hover:bg-sky-50 text-xs font-semibold cursor-pointer"
+            title="Work on Ticket"
+          >
+            Work on Ticket
+          </Button>
+        </div>
       ),
     },
   ];
