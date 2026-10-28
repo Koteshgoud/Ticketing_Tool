@@ -42,11 +42,32 @@ export const DEPARTMENTS: DepartmentItem[] = [
   { id: 'D006', name: 'Other' },
 ];
 
-export const TEAM_LEADS: TeamLeadItem[] = [];
+export const INITIAL_TEAM_LEADS: TeamLeadItem[] = [
+  { id: 'OKL003', employeeId: 'OKL003', name: 'Kotesh', role: 'IT Support Team Lead', departmentId: 'D001', departmentName: 'IT Support', email: 'k.ananthu@oklut.com' },
+  { id: 'OKL015', employeeId: 'OKL015', name: 'Manikanta', role: 'IT Support Team Lead', departmentId: 'D001', departmentName: 'IT Support', email: 'm.nisankam@oklut.com' },
+  { id: 'OKL013', employeeId: 'OKL013', name: 'soniya', role: 'HR Team Lead', departmentId: 'D003', departmentName: 'HR', email: 'soni@gmail.com' },
+];
 
-export const EMPLOYEES: EmployeeItem[] = [];
+export const INITIAL_EMPLOYEES: EmployeeItem[] = [
+  { id: 'OKL001', employeeId: 'OKL001', name: 'aditya', role: 'Team Member', teamLeadId: 'OKL003', departmentId: 'D001', departmentName: 'IT Support', email: 'a.reddy@oklut.com' },
+  { id: 'OKL002', employeeId: 'OKL002', name: 'uday', role: 'Team Member', teamLeadId: 'OKL003', departmentId: 'D001', departmentName: 'IT Support', email: 'u.vadlamudi@oklut.com' },
+  { id: 'OKL016', employeeId: 'OKL016', name: 'sudha', role: 'Team Member', teamLeadId: 'OKL015', departmentId: 'D001', departmentName: 'IT Support', email: 'sudha@gmail.com' },
+  { id: 'OKL014', employeeId: 'OKL014', name: 'Ramya', role: 'Team Member', teamLeadId: 'OKL013', departmentId: 'D003', departmentName: 'HR', email: 'ramya@gmail.com' },
+];
 
-const _leadEmployeesCache = new Map<string, EmployeeItem[]>();
+export const TEAM_LEADS: TeamLeadItem[] = [...INITIAL_TEAM_LEADS];
+
+export const EMPLOYEES: EmployeeItem[] = [...INITIAL_EMPLOYEES];
+
+const _leadEmployeesCache = new Map<string, EmployeeItem[]>([
+  ['OKL003', [INITIAL_EMPLOYEES[0], INITIAL_EMPLOYEES[1]]],
+  ['OKL015', [INITIAL_EMPLOYEES[2]]],
+  ['OKL013', [INITIAL_EMPLOYEES[3]]],
+]);
+
+let _syncInflight: Promise<void> | null = null;
+let _lastSyncAt = 0;
+const _SYNC_TTL_MS = 30000;
 
 export const OrganizationService = {
   getDepartments(): DepartmentItem[] {
@@ -58,9 +79,8 @@ export const OrganizationService = {
     return TEAM_LEADS.filter((tl) => {
       const tlDept = (tl.departmentName || '').trim().toLowerCase();
       if (tlDept === norm) return true;
-      if ((norm === 'hr' || norm === 'hr operations') && (tlDept === 'hr' || tlDept === 'hr operations')) {
-        return true;
-      }
+      if ((norm === 'hr' || norm === 'hr operations' || norm.includes('hr')) && (tlDept === 'hr' || tlDept === 'hr operations' || tlDept.includes('hr'))) return true;
+      if ((norm === 'it' || norm === 'it support') && (tlDept === 'it' || tlDept === 'it support')) return true;
       if (norm.length >= 2 && tlDept.length >= 2 && (tlDept.includes(norm) || norm.includes(tlDept))) {
         return true;
       }
@@ -196,86 +216,110 @@ export const OrganizationService = {
     return EMPLOYEES;
   },
 
-  async syncFromDatabase(): Promise<void> {
-    try {
-      const dbUsers = await apiRequest<any[]>('/users/directory');
-      if (!Array.isArray(dbUsers)) return;
-
-      TEAM_LEADS.length = 0;
-      EMPLOYEES.length = 0;
-
-      const leads: any[] = [];
-      const nonLeads: any[] = [];
-      for (const u of dbUsers) {
-        const roleLower = (u.role || '').toLowerCase();
-        if (roleLower === 'teamlead' || roleLower === 'team lead') {
-          leads.push(u);
-        } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
-          nonLeads.push(u);
-        }
-      }
-
-      for (const u of leads) {
-        const rawDept = u.department || 'IT Support';
-        let deptName = rawDept;
-        if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
-        else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-        else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
-        else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
-        else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
-
-        const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
-        const leadItem: TeamLeadItem = {
-          id: u.id,
-          employeeId: u.id,
-          name: u.name,
-          role: `${deptName} Team Lead`,
-          departmentId: deptObj.id,
-          departmentName: deptName,
-          email: u.email,
-        };
-        (leadItem as any).team = u.team;
-        TEAM_LEADS.push(leadItem);
-      }
-
-      for (const u of nonLeads) {
-        const rawDept = u.department || 'IT Support';
-        let deptName = rawDept;
-        if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
-        else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-        else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
-        else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
-        else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
-
-        const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
-        let leadId = u.team_lead_id || u.team_lead || '';
-        if (!leadId && u.team) {
-          const matchingLead = TEAM_LEADS.find(
-            (tl: any) =>
-              (tl.team && tl.team.toLowerCase() === u.team.toLowerCase()) ||
-              tl.id.toLowerCase() === u.team.toLowerCase()
-          );
-          if (matchingLead) leadId = matchingLead.id;
-        }
-        if (!leadId) {
-          const sameDeptLeads = TEAM_LEADS.filter(tl => tl.departmentName.toLowerCase() === deptName.toLowerCase());
-          if (sameDeptLeads.length === 1) leadId = sameDeptLeads[0].id;
-        }
-
-        const empItem: EmployeeItem = {
-          id: u.id,
-          employeeId: u.id,
-          name: u.name,
-          role: u.designation || 'Support Specialist',
-          teamLeadId: leadId,
-          departmentId: deptObj.id,
-          departmentName: deptName,
-          email: u.email,
-        };
-        EMPLOYEES.push(empItem);
-      }
-    } catch (e) {
-      console.warn('OrganizationService: syncFromDatabase error', e);
+  async syncFromDatabase(options: { force?: boolean } = {}): Promise<void> {
+    const force = options.force === true;
+    if (!force && _syncInflight) return _syncInflight;
+    if (!force && _lastSyncAt > 0 && Date.now() - _lastSyncAt < _SYNC_TTL_MS && TEAM_LEADS.length > 0) {
+      return;
     }
+
+    _syncInflight = (async () => {
+      try {
+        const res = await apiRequestSafe<any[]>('/users/directory');
+        if (res.error || !Array.isArray(res.data)) return;
+        const dbUsers = res.data;
+
+        const leads: any[] = [];
+        const nonLeads: any[] = [];
+        for (const u of dbUsers) {
+          const roleLower = (u.role || '').toLowerCase();
+          if (roleLower === 'teamlead' || roleLower === 'team lead') {
+            leads.push(u);
+          } else if (roleLower !== 'admin' && !roleLower.includes('lead')) {
+            nonLeads.push(u);
+          }
+        }
+
+        if (leads.length > 0) {
+          TEAM_LEADS.length = 0;
+          for (const u of leads) {
+            const rawDept = u.department || 'IT Support';
+            let deptName = rawDept;
+            if (rawDept.toLowerCase() === 'hr' || rawDept.toLowerCase().includes('hr')) deptName = 'HR';
+            else if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
+            else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
+            else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
+            else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
+
+            const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase() || (deptName === 'HR' && (d.name.toLowerCase() === 'hr' || d.name.toLowerCase().includes('hr')))) || DEPARTMENTS[0];
+            const leadItem: TeamLeadItem = {
+              id: u.id,
+              employeeId: u.id,
+              name: u.name,
+              role: `${deptName} Team Lead`,
+              departmentId: deptObj.id,
+              departmentName: deptName,
+              email: u.email,
+            };
+            (leadItem as any).team = u.team;
+            TEAM_LEADS.push(leadItem);
+          }
+        }
+
+        if (nonLeads.length > 0) {
+          EMPLOYEES.length = 0;
+          for (const u of nonLeads) {
+            const rawDept = u.department || 'IT Support';
+            let deptName = rawDept;
+            if (rawDept.toLowerCase() === 'hr' || rawDept.toLowerCase().includes('hr')) deptName = 'HR';
+            else if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
+            else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
+            else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
+            else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
+
+            const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase() || (deptName === 'HR' && (d.name.toLowerCase() === 'hr' || d.name.toLowerCase().includes('hr')))) || DEPARTMENTS[0];
+            let leadId = u.team_lead_id || u.team_lead || '';
+            if (!leadId && u.team) {
+              const matchingLead = TEAM_LEADS.find(
+                (tl: any) =>
+                  (tl.team && tl.team.toLowerCase() === u.team.toLowerCase()) ||
+                  tl.id.toLowerCase() === u.team.toLowerCase()
+              );
+              if (matchingLead) leadId = matchingLead.id;
+            }
+            if (!leadId) {
+              const sameDeptLeads = TEAM_LEADS.filter(tl => tl.departmentName.toLowerCase() === deptName.toLowerCase());
+              if (sameDeptLeads.length === 1) leadId = sameDeptLeads[0].id;
+            }
+
+            const empItem: EmployeeItem = {
+              id: u.id,
+              employeeId: u.id,
+              name: u.name,
+              role: u.designation || 'Team Member',
+              teamLeadId: leadId,
+              departmentId: deptObj.id,
+              departmentName: deptName,
+              email: u.email,
+            };
+            EMPLOYEES.push(empItem);
+            if (leadId) {
+              const current = _leadEmployeesCache.get(leadId) || [];
+              if (!current.some(e => e.id === empItem.id)) {
+                current.push(empItem);
+                _leadEmployeesCache.set(leadId, current);
+              }
+            }
+          }
+        }
+        _lastSyncAt = Date.now();
+      } catch (e) {
+        console.warn('OrganizationService: syncFromDatabase error', e);
+      } finally {
+        _syncInflight = null;
+      }
+    })();
+    return _syncInflight;
   },
+
 };

@@ -138,9 +138,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [users, setUsers] = useState<User[]>([]);
   const cached = readCachedUser();
   const hasToken = !!getBackendToken();
+  const hasRefreshToken = typeof window !== 'undefined' && !!(localStorage.getItem('backend_refresh_token') || sessionStorage.getItem('backend_refresh_token'));
+  const hasSession = hasToken || hasRefreshToken;
   const [currentUser, setCurrentUser] = useState<User>(() => cached || EMPTY_USER);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasToken && !!cached?.email);
-  const [isLoading, setIsLoading] = useState<boolean>(() => !cached?.email && hasToken);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => hasSession && !!cached?.email);
+  const [isLoading, setIsLoading] = useState<boolean>(() => hasSession && (!cached?.email || !hasToken));
 
   const loadUsers = useCallback(async () => {
     const result = await apiRequestSafe<any[]>('/team/users');

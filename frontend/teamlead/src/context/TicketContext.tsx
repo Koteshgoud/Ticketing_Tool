@@ -58,11 +58,13 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const { user } = useAuth();
   const userId = user?.id || '';
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>(() => ticketService.getCachedTickets() || []);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !ticketService.getCachedTickets() || ticketService.getCachedTickets()!.length === 0
+  );
   const [error, setError] = useState<string | null>(null);
 
   const currentUserName = user?.name || 'Team Lead';
@@ -80,7 +82,8 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const refresh = useCallback(async (silent = false, force = false) => {
-    if (!silent) {
+    const hasCache = !!ticketService.getCachedTickets() && ticketService.getCachedTickets()!.length > 0;
+    if (!silent && !hasCache) {
       setIsLoading(true);
     }
     if (force) {
@@ -89,7 +92,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const result = await ticketService.getTicketsDetailed(force);
     if (result.error) {
       setError(result.error);
-      if (!silent) {
+      if (!silent && !hasCache) {
         setTickets([]);
         setEscalations([]);
       }
@@ -100,9 +103,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setEscalations(loaded || []);
     }
     await loadNotifications();
-    if (!silent) {
-      setIsLoading(false);
-    }
+    setIsLoading(false);
   }, [loadNotifications]);
 
   useEffect(() => {
@@ -179,8 +180,20 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const createTicket = useCallback(async (data: CreateTicketInput): Promise<Ticket> => {
     const firstEmp = data.taggedEmployees?.[0];
-    const initialAgentName = data.assignedAgent || firstEmp?.name || 'Unassigned';
-    const initialAgentId = data.assignedAgentId || firstEmp?.id || undefined;
+    const firstLead = data.teamLeads?.[0];
+    const initialAgentName =
+      data.assignedAgent ||
+      firstEmp?.name ||
+      firstLead?.name ||
+      'Unassigned';
+    const initialAgentId =
+      data.assignedAgentId ||
+      firstEmp?.id ||
+      firstLead?.id ||
+      undefined;
+    const assignedToType =
+      data.assignedToType ||
+      (firstEmp ? 'employee' : firstLead ? 'teamlead' : 'unassigned');
 
     const created = await ticketService.createTicket(
       {
@@ -198,12 +211,16 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         employeeEmail: currentUserEmail || undefined,
         assignedAgent: initialAgentName,
         assignedAgentId: initialAgentId,
-        assignedToType: firstEmp ? 'employee' : 'unassigned',
+        assignedToType: assignedToType as any,
         assignedBy: `${currentUserName} (Creator)`,
         status: 'Open',
         taggedMembers: data.taggedMembers,
         taggedMemberIds: data.taggedMemberIds,
-      },
+        teamLeads: data.teamLeads,
+        teamLeadIds: data.teamLeadIds,
+        taggedEmployees: data.taggedEmployees,
+        employeeIds: data.employeeIds,
+      } as any,
       data.rawFiles,
     );
 

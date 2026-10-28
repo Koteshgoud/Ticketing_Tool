@@ -166,8 +166,12 @@ export const ticketService = {
     try {
       const data = await apiRequest<any>(`/tickets/${encodeURIComponent(id)}`);
       const ticket = mapTicket(data);
-      const attachments = await ticketService.getAttachmentsDetailed(id);
-      ticket.attachments = attachments.attachments;
+      if (!ticket.attachments || ticket.attachments.length === 0) {
+        const attachments = await ticketService.getAttachmentsDetailed(id);
+        if (attachments.attachments.length > 0) {
+          ticket.attachments = attachments.attachments;
+        }
+      }
       return ticket;
     } catch (e) {
       console.warn('Error in getTicketById:', e);

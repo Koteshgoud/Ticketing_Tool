@@ -36,8 +36,9 @@ export const AdminTicketDetailsPage: React.FC = () => {
   const searchParams = new URLSearchParams(location.search);
   const fromSource = searchParams.get('from');
 
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedTicket = id ? AdminApiService.getCachedTickets()?.find((t) => t.id === id || t.ticketNumber === id) : null;
+  const [ticket, setTicket] = useState<Ticket | null>(() => cachedTicket || null);
+  const [isLoading, setIsLoading] = useState(() => !cachedTicket);
   const [newComment, setNewComment] = useState('');
   const [commentAttachedFiles, setCommentAttachedFiles] = useState<AttachedFile[]>([]);
 
@@ -66,7 +67,9 @@ export const AdminTicketDetailsPage: React.FC = () => {
 
   const loadTicket = async () => {
     if (!id) return;
-    setIsLoading(true);
+    if (!ticket && !cachedTicket) {
+      setIsLoading(true);
+    }
     const found = await AdminApiService.getTicketById(id);
     if (found) {
       setTicket({ ...found });

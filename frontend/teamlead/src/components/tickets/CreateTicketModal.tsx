@@ -22,7 +22,7 @@ interface CreateTicketModalProps {
 const DEPARTMENT_OPTIONS = [
   'IT Support',
   'Finance',
-  'HR Operations',
+  'HR',
   'Facilities',
   'General Administration',
   'Other',
@@ -192,6 +192,25 @@ const CreateTicketModalContent: React.FC<{
         });
       }
 
+      const assignedTarget =
+        selectedEmployeeObjs.length > 0
+          ? {
+              assignedAgent: selectedEmployeeObjs[0].name,
+              assignedAgentId: selectedEmployeeObjs[0].id,
+              assignedToType: 'employee',
+            }
+          : selectedTeamLeadObjs.length > 0
+          ? {
+              assignedAgent: selectedTeamLeadObjs[0].name,
+              assignedAgentId: selectedTeamLeadObjs[0].id,
+              assignedToType: 'teamlead',
+            }
+          : {
+              assignedAgent: 'Unassigned',
+              assignedAgentId: undefined,
+              assignedToType: 'unassigned',
+            };
+
       const newTicket = await createTicket({
         subject: subject.trim(),
         description: description.trim(),
@@ -199,6 +218,9 @@ const CreateTicketModalContent: React.FC<{
         priority,
         department: mainDepartmentStr,
         departments: finalDepartments,
+        assignedAgent: assignedTarget.assignedAgent,
+        assignedAgentId: assignedTarget.assignedAgentId,
+        assignedToType: assignedTarget.assignedToType as any,
         teamLeads: selectedTeamLeadObjs.map((tl) => ({
           id: tl.id,
           employeeId: tl.employeeId,

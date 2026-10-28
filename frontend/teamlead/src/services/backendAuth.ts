@@ -121,6 +121,10 @@ export function setBackendSession(
   refreshToken: string | null,
   expiresInSeconds?: number,
 ): void {
+  try {
+    sessionStorage.removeItem('platform_explicitly_logged_out');
+    localStorage.removeItem('platform_explicitly_logged_out');
+  } catch {}
   setBackendToken(accessToken);
   memoryRefresh = refreshToken;
   writeStorage(REFRESH_KEY, refreshToken);
@@ -265,8 +269,6 @@ export function handleSessionExpiration(): void {
     localStorage.removeItem('itsm_teamlead_auth');
     sessionStorage.removeItem('auth_token');
     localStorage.removeItem('auth_token');
-    sessionStorage.setItem('platform_explicitly_logged_out', 'true');
-    localStorage.setItem('platform_explicitly_logged_out', 'true');
   } catch {}
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('session-expired'));
