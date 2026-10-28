@@ -23,7 +23,7 @@ export const EscalatedTicketsPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Toast notification state
-  const [toast, setToast] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -66,48 +66,64 @@ export const EscalatedTicketsPage: React.FC = () => {
 
   const handleReassignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTicket || !newAssignee) return;
+    if (isSubmitting || !selectedTicket || !newAssignee) return;
 
     setIsSubmitting(true);
-    const selectedUser = users.find((u) => u.name === newAssignee);
-    const logText = `Ticket reassigned from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reassignReason ? ` Reason: ${reassignReason}` : ''}`;
-    
-    await AdminApiService.updateTicket(
-      selectedTicket.id,
-      {
-        assignedTo: newAssignee,
-        ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
-      } as any,
-      logText
-    );
+    try {
+      const selectedUser = users.find((u) => u.name === newAssignee);
+      const logText = `Ticket reassigned from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reassignReason ? ` Reason: ${reassignReason}` : ''}`;
+      
+      await AdminApiService.updateTicket(
+        selectedTicket.id,
+        {
+          assignedTo: newAssignee,
+          ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
+        } as any,
+        logText
+      );
 
-    setToast({
-      type: 'success',
-      message: `Ticket ${selectedTicket.ticketNumber} reassigned to ${newAssignee}. Notifications sent to new assignee & Team Lead.`
-    });
+      setToast({
+        type: 'success',
+        message: `Ticket ${selectedTicket.ticketNumber} reassigned to ${newAssignee}. Notifications sent to new assignee & Team Lead.`
+      });
 
-    setIsSubmitting(false);
-    handleCloseModal();
-    loadData();
+      handleCloseModal();
+      loadData();
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to reassign ticket.'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleResolveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTicket) return;
+    if (isSubmitting || !selectedTicket) return;
 
     setIsSubmitting(true);
-    const logText = `Ticket marked as Resolved by Admin.${resolveNotes ? ` Resolution notes: ${resolveNotes}` : ''}`;
+    try {
+      const logText = `Ticket marked as Resolved by Admin.${resolveNotes ? ` Resolution notes: ${resolveNotes}` : ''}`;
 
-    await AdminApiService.updateTicket(selectedTicket.id, { status: 'Resolved' }, logText);
+      await AdminApiService.updateTicket(selectedTicket.id, { status: 'Resolved' }, logText);
 
-    setToast({
-      type: 'success',
-      message: `Ticket ${selectedTicket.ticketNumber} has been resolved successfully.`
-    });
+      setToast({
+        type: 'success',
+        message: `Ticket ${selectedTicket.ticketNumber} has been resolved successfully.`
+      });
 
-    setIsSubmitting(false);
-    handleCloseModal();
-    loadData();
+      handleCloseModal();
+      loadData();
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to resolve ticket.'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Active staff users options for Select component

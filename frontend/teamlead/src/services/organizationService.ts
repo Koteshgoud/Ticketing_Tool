@@ -34,7 +34,7 @@ export interface EmployeeItem {
 export const DEPARTMENTS: DepartmentItem[] = [
   { id: 'D001', name: 'IT Support' },
   { id: 'D002', name: 'Finance' },
-  { id: 'D003', name: 'HR Operations' },
+  { id: 'D003', name: 'HR' },
   { id: 'D004', name: 'Facilities' },
   { id: 'D005', name: 'General Administration' },
   { id: 'D006', name: 'Other' },
@@ -67,9 +67,13 @@ export const OrganizationService = {
 
   getTeamLeadsByDepartment(deptName: string): TeamLeadItem[] {
     const norm = (deptName || '').trim().toLowerCase();
-    return TEAM_LEADS.filter(
-      (tl) => tl.departmentName.toLowerCase() === norm
-    );
+    return TEAM_LEADS.filter((tl) => {
+      const tlDept = tl.departmentName.toLowerCase();
+      if (tlDept === norm) return true;
+      if ((norm === 'hr' || norm === 'hr operations' || norm.includes('hr')) && (tlDept === 'hr' || tlDept === 'hr operations' || tlDept.includes('hr'))) return true;
+      if ((norm === 'it' || norm === 'it support') && (tlDept === 'it' || tlDept === 'it support')) return true;
+      return false;
+    });
   },
 
   async fetchEmployeesByTeamLead(teamLeadId: string): Promise<EmployeeItem[]> {
@@ -251,13 +255,13 @@ export const OrganizationService = {
         for (const u of leads) {
           const rawDept = u.department || 'IT Support';
           let deptName = rawDept;
-          if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
+          if (rawDept.toLowerCase() === 'hr' || rawDept.toLowerCase().includes('hr')) deptName = 'HR';
+          else if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
           else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-          else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
           else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
           else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
 
-          const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
+          const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase() || (deptName === 'HR' && (d.name.toLowerCase() === 'hr' || d.name.toLowerCase().includes('hr')))) || DEPARTMENTS[0];
           const leadItem: TeamLeadItem = {
             id: u.id,
             employeeId: u.id,
@@ -274,13 +278,13 @@ export const OrganizationService = {
         for (const u of nonLeads) {
           const rawDept = u.department || 'IT Support';
           let deptName = rawDept;
-          if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
+          if (rawDept.toLowerCase() === 'hr' || rawDept.toLowerCase().includes('hr')) deptName = 'HR';
+          else if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
           else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-          else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
           else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
           else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
 
-          const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
+          const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase() || (deptName === 'HR' && (d.name.toLowerCase() === 'hr' || d.name.toLowerCase().includes('hr')))) || DEPARTMENTS[0];
           let leadId = u.team_lead_id || u.team_lead || '';
           if (!leadId && u.team) {
             const matchingLead = TEAM_LEADS.find(

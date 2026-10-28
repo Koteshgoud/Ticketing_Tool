@@ -179,8 +179,20 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const createTicket = useCallback(async (data: CreateTicketInput): Promise<Ticket> => {
     const firstEmp = data.taggedEmployees?.[0];
-    const initialAgentName = data.assignedAgent || firstEmp?.name || 'Unassigned';
-    const initialAgentId = data.assignedAgentId || firstEmp?.id || undefined;
+    const firstLead = data.teamLeads?.[0];
+    const initialAgentName =
+      data.assignedAgent ||
+      firstEmp?.name ||
+      firstLead?.name ||
+      'Unassigned';
+    const initialAgentId =
+      data.assignedAgentId ||
+      firstEmp?.id ||
+      firstLead?.id ||
+      undefined;
+    const assignedToType =
+      data.assignedToType ||
+      (firstEmp ? 'employee' : firstLead ? 'teamlead' : 'unassigned');
 
     const created = await ticketService.createTicket(
       {
@@ -198,12 +210,16 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         employeeEmail: currentUserEmail || undefined,
         assignedAgent: initialAgentName,
         assignedAgentId: initialAgentId,
-        assignedToType: firstEmp ? 'employee' : 'unassigned',
+        assignedToType: assignedToType as any,
         assignedBy: `${currentUserName} (Creator)`,
         status: 'Open',
         taggedMembers: data.taggedMembers,
         taggedMemberIds: data.taggedMemberIds,
-      },
+        teamLeads: data.teamLeads,
+        teamLeadIds: data.teamLeadIds,
+        taggedEmployees: data.taggedEmployees,
+        employeeIds: data.employeeIds,
+      } as any,
       data.rawFiles,
     );
 

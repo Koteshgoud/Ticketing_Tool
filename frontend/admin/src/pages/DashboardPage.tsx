@@ -27,10 +27,10 @@ import {
   Eye,
 } from 'lucide-react';
 
-const DEPARTMENT_OPTIONS = [
+const DEFAULT_DEPARTMENT_OPTIONS = [
   'IT Support',
   'Finance',
-  'HR Operations',
+  'HR',
   'Facilities',
   'General Administration',
   'Other',
@@ -38,6 +38,7 @@ const DEPARTMENT_OPTIONS = [
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>(DEFAULT_DEPARTMENT_OPTIONS);
   const [stats, setStats] = useState<DashboardStats | null>(() => AdminApiService.getCachedStats());
   const [tickets, setTickets] = useState<Ticket[]>(() => AdminApiService.getCachedTickets() || []);
   const [filterQuery, setFilterQuery] = useState('');
@@ -124,6 +125,12 @@ export const DashboardPage: React.FC = () => {
     };
 
     void run(false);
+    OrganizationService.syncFromDatabase().then(() => {
+      const depts = OrganizationService.getDepartments();
+      if (depts && depts.length > 0) {
+        setDepartmentOptions(depts.map((d) => d.name));
+      }
+    });
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'ticket_refresh_event' || e.key === 'itsm_tickets_version') {
@@ -682,30 +689,38 @@ export const DashboardPage: React.FC = () => {
 
       {/* Admin Create Ticket Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 font-sans space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <PlusCircle className="w-5 h-5 text-[#0284C7]" />
-                Create Ticket (Admin)
-              </h3>
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col my-4 max-h-[92vh] animate-in zoom-in-95 duration-150">
+            {/* Fixed Header */}
+            <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-sky-100 text-[#0284C7] font-bold">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-slate-900">Create Support Ticket (Admin)</h2>
+                  <p className="text-xs text-slate-500">Route tickets to departments and assign to team leads or members</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                title="Close"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {validationError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-semibold flex items-center gap-2">
+              <div className="mx-5 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-semibold flex items-center gap-2 shrink-0">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {validationError}
               </div>
             )}
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4">
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleCreateSubmit} className="p-5 space-y-4 text-xs overflow-y-auto flex-1 font-sans">
               {/* Subject */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -731,7 +746,7 @@ export const DashboardPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {DEPARTMENT_OPTIONS.map((dept) => {
+                  {departmentOptions.map((dept) => {
                     const isSelected = selectedDepartments.includes(dept);
                     return (
                       <button

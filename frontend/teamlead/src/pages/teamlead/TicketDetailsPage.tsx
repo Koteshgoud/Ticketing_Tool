@@ -53,8 +53,8 @@ export const TicketDetailsPage: React.FC = () => {
   const { tickets, updateStatus, changePriority, addComment, escalateTicket, resolveTicket } = useTickets();
   const { user, role } = useAuth();
 
-  const [ticketData, setTicketData] = useState<Ticket | null>(null);
-  const [ticketLoading, setTicketLoading] = useState(true);
+  const [ticketData, setTicketData] = useState<Ticket | null>(() => tickets.find((t) => t.id === ticketId) || null);
+  const [ticketLoading, setTicketLoading] = useState(() => !tickets.find((t) => t.id === ticketId));
 
   // Modal States
   const [isUpdateStatusOpen, setIsUpdateStatusOpen] = useState(false);
@@ -84,10 +84,6 @@ export const TicketDetailsPage: React.FC = () => {
         setTicketLoading(false);
         return;
       }
-      const existing = tickets.find((t) => t.id === ticketId);
-      if (existing) {
-        setTicketData(existing);
-      }
       try {
         const fetched = await ticketService.getTicketById(ticketId);
         if (isMounted && fetched) {
@@ -106,7 +102,7 @@ export const TicketDetailsPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [ticketId, tickets]);
+  }, [ticketId]);
 
   const ticket = ticketData || tickets.find((t) => t.id === ticketId);
 
@@ -308,15 +304,6 @@ export const TicketDetailsPage: React.FC = () => {
             </span>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={switchToViewMode}
-                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 font-semibold text-xs rounded-xl border border-slate-200 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Eye className="w-3.5 h-3.5 mr-1" />
-                <span>View Only</span>
-              </button>
-
               {/* Update Status Dropdown */}
               <div className="relative">
                 <button

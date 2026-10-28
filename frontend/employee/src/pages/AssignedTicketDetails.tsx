@@ -49,7 +49,7 @@ export const AssignedTicketDetails: React.FC = () => {
     navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
   };
 
-  const [ticket, setTicket] = useState<EmployeeTicket | null>(null);
+  const [ticket, setTicket] = useState<EmployeeTicket | null>(() => (id ? EmployeeService.getTicketById(id) || null : null));
   const [newComment, setNewComment] = useState('');
   const [commentAttachedFiles, setCommentAttachedFiles] = useState<AttachedFile[]>([]);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -109,11 +109,13 @@ export const AssignedTicketDetails: React.FC = () => {
     setPreviewAttachment({ name: cleanName, size, viewUrl });
   };
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !id || !EmployeeService.getTicketById(id));
 
   const loadTicket = async () => {
     if (!id) return;
-    setIsLoading(true);
+    if (!ticket && !EmployeeService.getTicketById(id)) {
+      setIsLoading(true);
+    }
     setAttachmentsLoading(true);
     setAttachmentsError(null);
 
@@ -316,16 +318,6 @@ export const AssignedTicketDetails: React.FC = () => {
             </span>
           ) : (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={switchToViewMode}
-                className="border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-xs"
-              >
-                <Eye className="w-3.5 h-3.5 mr-1" />
-                View Only
-              </Button>
-
               {isAssignedToMe && (
                 <>
                   <Button

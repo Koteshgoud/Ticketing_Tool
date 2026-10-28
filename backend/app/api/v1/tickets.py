@@ -414,45 +414,29 @@ def get_ticket(
 
     comments: list[dict[str, Any]] = []
     activities: list[dict[str, Any]] = []
-    seen_comment_ids: set[str] = set()
-    for cid in cands:
-        try:
-            res = (
-                sb.table("ticket_comments")
-                .select("*")
-                .eq("ticket_id", cid)
-                .order("created_at", desc=False)
-                .execute()
-            )
-            for row in (res.data or []):
-                rid = str(row.get("id") or "")
-                if rid and rid in seen_comment_ids:
-                    continue
-                if rid:
-                    seen_comment_ids.add(rid)
-                comments.append(row)
-        except Exception as exc:
-            print(f"[tickets] comments unavailable: {exc}")
+    try:
+        res = (
+            sb.table("ticket_comments")
+            .select("*")
+            .in_("ticket_id", cands)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        comments = res.data or []
+    except Exception as exc:
+        print(f"[tickets] comments unavailable: {exc}")
 
-    seen_act_ids: set[str] = set()
-    for cid in cands:
-        try:
-            res = (
-                sb.table("ticket_activities")
-                .select("*")
-                .eq("ticket_id", cid)
-                .order("timestamp", desc=True)
-                .execute()
-            )
-            for row in (res.data or []):
-                rid = str(row.get("id") or "")
-                if rid and rid in seen_act_ids:
-                    continue
-                if rid:
-                    seen_act_ids.add(rid)
-                activities.append(row)
-        except Exception as exc:
-            print(f"[tickets] activities unavailable: {exc}")
+    try:
+        res = (
+            sb.table("ticket_activities")
+            .select("*")
+            .in_("ticket_id", cands)
+            .order("timestamp", desc=True)
+            .execute()
+        )
+        activities = res.data or []
+    except Exception as exc:
+        print(f"[tickets] activities unavailable: {exc}")
 
     result = serialize_ticket(ticket, load_attachments=True)
     # Internal notes are only returned to users who can manage the ticket.
@@ -566,7 +550,12 @@ def create_ticket(
             elif isinstance(item, str) and item.strip():
                 raw_emp_ids.add(item.strip())
     if agent_id:
-        raw_emp_ids.add(agent_id)
+        target_agent = _find_user(user_id=agent_id)
+        if target_agent and normalize_role(target_agent.get("role")) == ROLE_TEAMLEAD:
+            raw_tl_ids.add(agent_id)
+            body.assigned_to_type = "teamlead"
+        else:
+            raw_emp_ids.add(agent_id)
 
     # If agent was not specified explicitly, resolve from selected employees
     if not agent_id and raw_emp_ids:
@@ -579,10 +568,11 @@ def create_ticket(
             body.assigned_to_type = "employee"
     elif not agent_id and raw_tl_ids:
         # Route to selected Team Lead, UNLESS the selected Team Lead is the creator themselves.
-        # (Requirement 6: Team Lead created tickets must NOT automatically appear in their own Assigned Tickets)
-        first_tl_id = next(iter(raw_tl_ids))
+        # (Requirement: Team Lead created tickets must NOT automatically appear in their own Assigned Tickets unless explicitly selected)
         creator_id = str(user.get("id") or "").strip()
-        if not (is_teamlead(payload) and first_tl_id == creator_id):
+        candidate_leads = [tlid for tlid in raw_tl_ids if not (is_teamlead(payload) and tlid == creator_id)]
+        if candidate_leads:
+            first_tl_id = candidate_leads[0]
             tl_target = _find_user(user_id=first_tl_id)
             if tl_target:
                 agent_id = str(tl_target.get("id") or "")

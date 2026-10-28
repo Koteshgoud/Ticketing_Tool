@@ -219,6 +219,31 @@ def update_profile(
     return _safe_user(updated)
 
 
+# ── Departments ──────────────────────────────────────────────────────────────
+
+@router.get("/departments", summary="List configured departments")
+def get_departments(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> list[dict[str, Any]]:
+    sb = get_supabase_admin_client()
+    try:
+        res = sb.table("departments").select("id, name, code, display_aliases, description, is_active").eq("is_active", True).order("id").execute()
+        rows = res.data or []
+        if rows:
+            return rows
+    except Exception as exc:
+        print(f"[portal] departments table fallback: {exc}")
+    return [
+        {"id": 1, "name": "IT Support", "code": "ITSUPPORT", "display_aliases": ["IT Support", "IT Support Team", "IT"]},
+        {"id": 2, "name": "Finance", "code": "FINANCE", "display_aliases": ["Finance", "Finance & Payroll"]},
+        {"id": 3, "name": "HR", "code": "HR", "display_aliases": ["HR", "HR Operations", "HR & Benefits"]},
+        {"id": 4, "name": "Operations", "code": "OPS", "display_aliases": ["Operations", "Operations & Logistics"]},
+        {"id": 8, "name": "Facilities", "code": "FACILITY", "display_aliases": ["Facilities", "Facilities & Building"]},
+        {"id": 9, "name": "General Administration", "code": "GENADMIN", "display_aliases": ["General Administration", "Administration"]},
+        {"id": 10, "name": "Other", "code": "OTHER", "display_aliases": ["Other", "Others"]},
+    ]
+
+
 # ── Notifications ────────────────────────────────────────────────────────────
 
 _NOTIF_CACHE: tuple[float, list[dict[str, Any]]] | None = None
