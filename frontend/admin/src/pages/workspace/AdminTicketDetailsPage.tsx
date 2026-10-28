@@ -334,60 +334,11 @@ export const AdminTicketDetailsPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> Back to {fromSource === 'my-tickets' ? 'My Tickets' : 'All Tickets'}
         </button>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenDeadlineModal}
-            className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
-          >
-            <Calendar className="w-3.5 h-3.5 mr-1 text-[#0284C7]" />
-            Assign Deadline
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSelectedStatus(ticket.status);
-              setShowStatusModal(true);
-            }}
-            className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
-          >
-            Update Status
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSelectedPriority(ticket.priority);
-              setShowPriorityModal(true);
-            }}
-            className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
-          >
-            Update Priority
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowAttachModal(true)}
-            className="border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
-          >
-            <Paperclip className="w-3.5 h-3.5 mr-1" />
-            Add Attachment
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowDeleteModal(true)}
-            className="border-rose-200 text-rose-600 hover:bg-rose-50 font-semibold text-xs cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-500" />
-            Delete
-          </Button>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200 shadow-2xs">
+            <Eye className="w-3.5 h-3.5 text-slate-500" />
+            Read-Only View
+          </span>
         </div>
       </div>
 
@@ -423,13 +374,6 @@ export const AdminTicketDetailsPage: React.FC = () => {
             <div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SLA Deadline</span>
-                <button
-                  type="button"
-                  onClick={handleOpenDeadlineModal}
-                  className="text-[10px] font-bold text-[#0284C7] hover:underline cursor-pointer"
-                >
-                  Edit
-                </button>
               </div>
               <div className="font-bold text-slate-800">{ticket.dueDate || ticket.createdAt}</div>
               <div className="text-[10px] font-semibold text-[#0284C7] mt-0.5">{ticket.slaStatus}</div>
@@ -524,17 +468,10 @@ export const AdminTicketDetailsPage: React.FC = () => {
           </div>
 
           <div>
-            <div className="flex items-center justify-between">
+            <div>
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 SLA Deadline
               </span>
-              <button
-                type="button"
-                onClick={handleOpenDeadlineModal}
-                className="text-[10px] font-bold text-[#0284C7] hover:underline cursor-pointer mb-1"
-              >
-                Assign
-              </button>
             </div>
             <span className="text-xs font-semibold text-slate-800">{ticket.dueDate || ticket.createdAt}</span>
           </div>
@@ -557,13 +494,6 @@ export const AdminTicketDetailsPage: React.FC = () => {
               <Paperclip className="w-3.5 h-3.5 text-slate-400" />
               Attachments ({ticket.attachments?.length || 0})
             </h3>
-            <button
-              type="button"
-              onClick={() => setShowAttachModal(true)}
-              className="text-xs font-semibold text-[#0284C7] hover:underline cursor-pointer flex items-center gap-1"
-            >
-              + Upload File
-            </button>
           </div>
 
           {ticket.attachmentsError ? (
@@ -657,274 +587,17 @@ export const AdminTicketDetailsPage: React.FC = () => {
           )}
         </div>
 
-        {/* Add Comment Form */}
-        <form onSubmit={handleAddCommentSubmit} className="pt-4 border-t border-slate-100 space-y-3">
-          <label className="block text-xs font-bold text-slate-700">Add Comment / Activity Note</label>
-          <textarea
-            rows={3}
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Type your comment or update here..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20"
-          />
-          <AttachmentFilePicker
-            files={commentAttachedFiles}
-            onFilesChange={setCommentAttachedFiles}
-            label=""
-            buttonText="Attach Local File to Comment"
-            compact
-          />
-          <div className="flex justify-end pt-1">
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={!newComment.trim()}
-              className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs"
-            >
-              <Send className="w-3.5 h-3.5 mr-1.5" />
-              Post Comment
-            </Button>
+        {/* Read-Only Notice */}
+        <div className="pt-4 border-t border-slate-100">
+          <div className="p-3.5 bg-slate-50 border border-slate-200/70 rounded-xl text-center">
+            <p className="text-xs text-slate-500 italic">
+              This ticket is in read-only view. Editing and status updates are disabled in the Admin Dashboard.
+            </p>
           </div>
-        </form>
+        </div>
       </div>
 
-      {/* Update Status Modal */}
-      {showStatusModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 font-sans space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Update Ticket Status</h3>
-            <form onSubmit={handleStatusUpdateSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Select Status</label>
-                <Select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value as TicketStatus)}
-                  options={[
-                    { value: 'Open', label: 'Open' },
-                    { value: 'In Progress', label: 'In Progress' },
-                    { value: 'Pending', label: 'Pending' },
-                    { value: 'Escalated', label: 'Escalated' },
-                    { value: 'Resolved', label: 'Resolved' },
-                    { value: 'Closed', label: 'Closed' },
-                  ]}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Status Note / Activity Reason (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={statusNote}
-                  onChange={(e) => setStatusNote(e.target.value)}
-                  placeholder="Explain why status was updated..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-[#0284C7]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowStatusModal(false)}
-                  className="border-slate-200 text-slate-600"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" className="bg-[#0284C7] text-white">
-                  Save Status
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Priority Update Modal */}
-      {showPriorityModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 font-sans space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Update Ticket Priority</h3>
-            <form onSubmit={handlePriorityUpdateSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Select Priority</label>
-                <Select
-                  value={selectedPriority}
-                  onChange={(e) => setSelectedPriority(e.target.value as any)}
-                  options={[
-                    { value: 'Low', label: 'Low' },
-                    { value: 'Medium', label: 'Medium' },
-                    { value: 'High', label: 'High' },
-                    { value: 'Urgent', label: 'Urgent' },
-                  ]}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Priority Note / Activity Reason (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={priorityNote}
-                  onChange={(e) => setPriorityNote(e.target.value)}
-                  placeholder="Explain why priority was changed..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-[#0284C7]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowPriorityModal(false)}
-                  className="border-slate-200 text-slate-600"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" className="bg-[#0284C7] text-white">
-                  Save Priority
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Add Attachment Modal */}
-      {showAttachModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 font-sans space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Upload Attachment</h3>
-            <form onSubmit={handleAddAttachmentSubmit} className="space-y-4">
-              <AttachmentFilePicker
-                files={modalAttachedFiles}
-                onFilesChange={setModalAttachedFiles}
-                existingAttachments={ticket.attachments}
-                label="Select Local Computer Files"
-                buttonText="Browse Files from PC"
-              />
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowAttachModal(false);
-                    setModalAttachedFiles([]);
-                  }}
-                  className="border-slate-200 text-slate-600"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={modalAttachedFiles.length === 0}
-                  className="bg-[#0284C7] text-white font-semibold"
-                >
-                  Upload Attachments
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Assign / Edit SLA Deadline Modal */}
-      {showDeadlineModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 font-sans space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-[#0284C7]" /> Assign SLA Deadline
-              </h3>
-              <button
-                onClick={() => setShowDeadlineModal(false)}
-                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Set the SLA resolution deadline for ticket <strong className="text-slate-800">{ticket.ticketNumber}</strong>. Select a standard SLA preset or enter a custom date and time.
-            </p>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-700">Quick SLA Presets</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleApplyPresetDeadline(4)}
-                  className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-xs font-semibold hover:bg-rose-100 transition-colors cursor-pointer text-left"
-                >
-                  Urgent / Critical: +4 Hours
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPresetDeadline(8)}
-                  className="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors cursor-pointer text-left"
-                >
-                  High: +8 Hours
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPresetDeadline(24)}
-                  className="px-2.5 py-1.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 text-xs font-semibold hover:bg-sky-100 transition-colors cursor-pointer text-left"
-                >
-                  Medium: +24 Hours (1 Day)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPresetDeadline(48)}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-xs font-semibold hover:bg-slate-100 transition-colors cursor-pointer text-left"
-                >
-                  Low: +48 Hours (2 Days)
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleSaveDeadlineSubmit} className="space-y-4 pt-2">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Custom Resolution Deadline
-                </label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={deadlineValue}
-                  onChange={(e) => setDeadlineValue(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#0284C7]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowDeadlineModal(false)}
-                  className="border-slate-200 text-slate-600"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={isSavingDeadline}
-                  className="bg-[#0284C7] text-white font-semibold"
-                >
-                  {isSavingDeadline ? 'Saving...' : 'Confirm Deadline'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 4: Attachment Preview Modal */}
+      {/* Attachment Preview Modal */}
       {previewFile && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full border border-slate-200 animate-in zoom-in-95 duration-150">
@@ -988,41 +661,6 @@ export const AdminTicketDetailsPage: React.FC = () => {
               >
                 <Download className="w-3.5 h-3.5" />
                 Download Attachment
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 5: Delete Ticket Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-md w-full border border-slate-200 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-2.5 text-rose-600 font-bold text-base mb-2">
-              <AlertCircle className="w-5 h-5 text-rose-600" />
-              <h3>Delete Ticket Confirmation</h3>
-            </div>
-            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              Are you sure you want to permanently delete ticket <strong className="text-slate-900">{ticket.ticketNumber}</strong>? This action will remove all associated comments, activities, and attachments from the system.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isDeleting}
-                onClick={() => setShowDeleteModal(false)}
-                className="border-slate-200 text-slate-600"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={isDeleting}
-                onClick={handleDeleteTicket}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
-              >
-                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
               </Button>
             </div>
           </div>

@@ -34,7 +34,8 @@ export interface EmployeeItem {
 export const DEPARTMENTS: DepartmentItem[] = [
   { id: 'D001', name: 'IT Support' },
   { id: 'D002', name: 'Finance' },
-  { id: 'D003', name: 'HR Operations' },
+  { id: 'D003', name: 'HR' },
+  { id: 'D003b', name: 'HR Operations' },
   { id: 'D004', name: 'Facilities' },
   { id: 'D005', name: 'General Administration' },
   { id: 'D006', name: 'Other' },
@@ -53,9 +54,17 @@ export const OrganizationService = {
 
   getTeamLeadsByDepartment(deptName: string): TeamLeadItem[] {
     const norm = (deptName || '').trim().toLowerCase();
-    return TEAM_LEADS.filter(
-      (tl) => tl.departmentName.toLowerCase() === norm
-    );
+    return TEAM_LEADS.filter((tl) => {
+      const tlDept = (tl.departmentName || '').trim().toLowerCase();
+      if (tlDept === norm) return true;
+      if ((norm === 'hr' || norm === 'hr operations') && (tlDept === 'hr' || tlDept === 'hr operations')) {
+        return true;
+      }
+      if (norm.length >= 2 && tlDept.length >= 2 && (tlDept.includes(norm) || norm.includes(tlDept))) {
+        return true;
+      }
+      return false;
+    });
   },
 
   async fetchEmployeesByTeamLead(teamLeadId: string): Promise<EmployeeItem[]> {
@@ -68,7 +77,9 @@ export const OrganizationService = {
       const raw = Array.isArray(res.data) ? res.data : [];
       const lead = this.getTeamLeadById(teamLeadId);
       const items: EmployeeItem[] = raw.map((u) => {
-        const rawDept = u.department || lead?.departmentName || 'IT Support';
+        let rawDept = u.department || lead?.departmentName || 'IT Support';
+        const rawLower = rawDept.toLowerCase().trim();
+        if (rawLower === 'hr' || rawLower === 'hr operations') rawDept = 'HR';
         const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === rawDept.toLowerCase()) || DEPARTMENTS[0];
         return {
           id: u.id,
@@ -211,11 +222,18 @@ export const OrganizationService = {
       for (const u of leads) {
         const rawDept = u.department || 'IT Support';
         let deptName = rawDept;
-        if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
-        else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-        else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
-        else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
-        else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
+        const rawLower = rawDept.toLowerCase().trim();
+        if (rawLower === 'hr' || rawLower === 'hr operations') {
+          deptName = 'HR';
+        } else if (rawLower.includes('it')) {
+          deptName = 'IT Support';
+        } else if (rawLower.includes('fin')) {
+          deptName = 'Finance';
+        } else if (rawLower.includes('fac')) {
+          deptName = 'Facilities';
+        } else if (rawLower.includes('admin')) {
+          deptName = 'General Administration';
+        }
 
         const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
         const leadItem: TeamLeadItem = {
@@ -234,11 +252,18 @@ export const OrganizationService = {
       for (const u of nonLeads) {
         const rawDept = u.department || 'IT Support';
         let deptName = rawDept;
-        if (rawDept.toLowerCase().includes('it')) deptName = 'IT Support';
-        else if (rawDept.toLowerCase().includes('fin')) deptName = 'Finance';
-        else if (rawDept.toLowerCase().includes('hr')) deptName = 'HR Operations';
-        else if (rawDept.toLowerCase().includes('fac')) deptName = 'Facilities';
-        else if (rawDept.toLowerCase().includes('admin')) deptName = 'General Administration';
+        const rawLower = rawDept.toLowerCase().trim();
+        if (rawLower === 'hr' || rawLower === 'hr operations') {
+          deptName = 'HR';
+        } else if (rawLower.includes('it')) {
+          deptName = 'IT Support';
+        } else if (rawLower.includes('fin')) {
+          deptName = 'Finance';
+        } else if (rawLower.includes('fac')) {
+          deptName = 'Facilities';
+        } else if (rawLower.includes('admin')) {
+          deptName = 'General Administration';
+        }
 
         const deptObj = DEPARTMENTS.find(d => d.name.toLowerCase() === deptName.toLowerCase()) || DEPARTMENTS[0];
         let leadId = u.team_lead_id || u.team_lead || '';
@@ -246,12 +271,17 @@ export const OrganizationService = {
           const matchingLead = TEAM_LEADS.find(
             (tl: any) =>
               (tl.team && tl.team.toLowerCase() === u.team.toLowerCase()) ||
-              tl.id.toLowerCase() === u.team.toLowerCase()
+              tl.id.toLowerCase() === u.team.toLowerCase() ||
+              tl.employeeId.toLowerCase() === u.team.toLowerCase()
           );
           if (matchingLead) leadId = matchingLead.id;
         }
         if (!leadId) {
-          const sameDeptLeads = TEAM_LEADS.filter(tl => tl.departmentName.toLowerCase() === deptName.toLowerCase());
+          const sameDeptLeads = TEAM_LEADS.filter(tl => {
+            const tlDept = tl.departmentName.toLowerCase();
+            return tlDept === deptName.toLowerCase() ||
+              ((tlDept === 'hr' || tlDept === 'hr operations') && (deptName.toLowerCase() === 'hr' || deptName.toLowerCase() === 'hr operations'));
+          });
           if (sameDeptLeads.length === 1) leadId = sameDeptLeads[0].id;
         }
 

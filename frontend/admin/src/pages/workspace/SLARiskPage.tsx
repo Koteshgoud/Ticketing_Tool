@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -7,9 +8,10 @@ import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
 import type { Ticket, User } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { Clock, CheckCircle2, UserCheck, AlertTriangle, Bell, Zap } from 'lucide-react';
+import { Clock, CheckCircle2, UserCheck, AlertTriangle, Bell, Zap, Eye } from 'lucide-react';
 
 export const SLARiskPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -163,12 +165,14 @@ export const SLARiskPage: React.FC = () => {
       header: 'Action',
       cell: (row) => (
         <Button
-          variant="secondary"
+          variant="ghost"
           size="sm"
-          className="text-[12px] hover:bg-amber-100 hover:text-amber-800 border-amber-300"
-          onClick={() => handleOpenModal(row)}
+          icon={<Eye className="w-3.5 h-3.5" />}
+          className="text-xs"
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          title="View Ticket Details"
         >
-          Speed Up SLA
+          View
         </Button>
       )
     }

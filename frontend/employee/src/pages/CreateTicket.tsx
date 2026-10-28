@@ -15,7 +15,7 @@ import { OrganizationService, type TeamLeadItem, type EmployeeItem } from '../se
 const DEPARTMENT_OPTIONS = [
   'IT Support',
   'Finance',
-  'HR Operations',
+  'HR',
   'Facilities',
   'General Administration',
   'Other',

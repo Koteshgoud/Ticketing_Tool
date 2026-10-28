@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 
 export const TicketManagementPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeQueueTab, setActiveQueueTab] = useState<'all' | 'unassigned' | 'in_progress' | 'pending' | 'escalated'>('all');
@@ -533,8 +535,8 @@ export const TicketManagementPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* ACTION MODAL (Assign / Reassign / Status / Priority / Escalate) */}
-      {actionModalType && selectedTicket && (
+      {/* ACTION MODAL disabled in view-only Admin Dashboard */}
+      {false && actionModalType && selectedTicket && (
         <Modal
           isOpen={true}
           onClose={() => setActionModalType(null)}
@@ -719,39 +721,18 @@ export const TicketManagementPage: React.FC = () => {
                   </Badge>
                 </div>
                 <h2 className="text-lg font-bold text-slate-900 mt-1">{selectedTicket.title}</h2>
-                <div className="flex items-center gap-1.5 mt-2.5">
+                <div className="flex items-center gap-2 mt-2.5">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                    <Eye className="w-3.5 h-3.5 text-slate-500" />
+                    Read-Only View
+                  </span>
                   <button
-                    onClick={() => handleOpenActionModal(selectedTicket, 'reassign')}
-                    className="px-2 py-1 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded border border-slate-300 font-medium cursor-pointer text-[11px]"
+                    onClick={() => navigate(`/admin/workspace/tickets/${selectedTicket.id}`)}
+                    className="px-2.5 py-1 bg-sky-50 text-[#0284C7] hover:bg-sky-100 rounded-lg border border-sky-200 font-semibold cursor-pointer text-xs flex items-center gap-1"
                   >
-                    Assign / Reassign
+                    <Eye className="w-3 h-3" />
+                    View Details
                   </button>
-                  <button
-                    onClick={() => handleOpenActionModal(selectedTicket, 'deadline')}
-                    className="px-2 py-1 bg-sky-50 text-[#0284C7] hover:bg-sky-100 rounded border border-sky-200 font-medium cursor-pointer text-[11px]"
-                  >
-                    Assign Deadline
-                  </button>
-                  <button
-                    onClick={() => handleOpenActionModal(selectedTicket, 'status')}
-                    className="px-2 py-1 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded border border-slate-300 font-medium cursor-pointer text-[11px]"
-                  >
-                    Status
-                  </button>
-                  <button
-                    onClick={() => handleOpenActionModal(selectedTicket, 'priority')}
-                    className="px-2 py-1 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded border border-slate-300 font-medium cursor-pointer text-[11px]"
-                  >
-                    Priority
-                  </button>
-                  {selectedTicket.status !== 'Escalated' && (
-                    <button
-                      onClick={() => handleOpenActionModal(selectedTicket, 'escalate')}
-                      className="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200 font-semibold cursor-pointer text-[11px]"
-                    >
-                      Escalate
-                    </button>
-                  )}
                 </div>
               </div>
               <button

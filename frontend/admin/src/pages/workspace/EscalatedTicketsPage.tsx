@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -7,9 +8,10 @@ import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
 import type { Ticket, User } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { AlertTriangle, ArrowUpRight, CheckCircle2, UserCheck, Bell } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, CheckCircle2, UserCheck, Bell, Eye } from 'lucide-react';
 
 export const EscalatedTicketsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,7 +125,15 @@ export const EscalatedTicketsPage: React.FC = () => {
   const columns: Column<Ticket>[] = [
     {
       header: 'Ticket ID',
-      cell: (row) => <span className="font-mono text-red-600 font-bold text-[12.5px]">{row.ticketNumber}</span>
+      cell: (row) => (
+        <button
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          className="font-mono text-red-600 font-bold text-[12.5px] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+          title="Click to view ticket details"
+        >
+          {row.ticketNumber}
+        </button>
+      )
     },
     {
       header: 'Title & Category',
@@ -162,13 +172,14 @@ export const EscalatedTicketsPage: React.FC = () => {
       header: 'Actions',
       cell: (row) => (
         <Button
-          variant="danger"
+          variant="ghost"
           size="sm"
-          icon={<ArrowUpRight className="w-3.5 h-3.5" />}
-          className="text-[12px]"
-          onClick={() => handleOpenModal(row)}
+          icon={<Eye className="w-3.5 h-3.5" />}
+          className="text-xs"
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          title="View Ticket Details"
         >
-          Reassign / Resolve
+          View
         </Button>
       )
     }
@@ -212,8 +223,8 @@ export const EscalatedTicketsPage: React.FC = () => {
         <Table columns={columns} data={tickets} keyExtractor={(row) => row.id} isLoading={isLoading} />
       </Card>
 
-      {/* Action Modal */}
-      {selectedTicket && (
+      {/* Action Modal disabled in view-only Admin Dashboard */}
+      {false && selectedTicket && (
         <Modal
           isOpen={!!selectedTicket}
           onClose={handleCloseModal}

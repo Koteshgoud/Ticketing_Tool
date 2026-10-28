@@ -34,7 +34,8 @@ export interface EmployeeItem {
 export const DEPARTMENTS: DepartmentItem[] = [
   { id: 'D001', name: 'IT Support' },
   { id: 'D002', name: 'Finance' },
-  { id: 'D003', name: 'HR Operations' },
+  { id: 'D003', name: 'HR' },
+  { id: 'D003b', name: 'HR Operations' },
   { id: 'D004', name: 'Facilities' },
   { id: 'D005', name: 'General Administration' },
   { id: 'D006', name: 'Other' },
@@ -67,9 +68,17 @@ export const OrganizationService = {
 
   getTeamLeadsByDepartment(deptName: string): TeamLeadItem[] {
     const norm = (deptName || '').trim().toLowerCase();
-    return TEAM_LEADS.filter(
-      (tl) => tl.departmentName.toLowerCase() === norm
-    );
+    return TEAM_LEADS.filter((tl) => {
+      const tlDept = (tl.departmentName || '').trim().toLowerCase();
+      if (tlDept === norm) return true;
+      if ((norm === 'hr' || norm === 'hr operations') && (tlDept === 'hr' || tlDept === 'hr operations')) {
+        return true;
+      }
+      if (norm.length >= 2 && tlDept.length >= 2 && (tlDept.includes(norm) || norm.includes(tlDept))) {
+        return true;
+      }
+      return false;
+    });
   },
 
   async fetchEmployeesByTeamLead(teamLeadId: string): Promise<EmployeeItem[]> {

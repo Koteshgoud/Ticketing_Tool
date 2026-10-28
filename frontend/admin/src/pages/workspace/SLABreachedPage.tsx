@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -7,9 +8,10 @@ import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
 import type { Ticket, User } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { ShieldAlert, CheckCircle2, UserCheck, Bell, AlertOctagon } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, UserCheck, Bell, AlertOctagon, Eye } from 'lucide-react';
 
 export const SLABreachedPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -127,12 +129,14 @@ export const SLABreachedPage: React.FC = () => {
       header: 'Action',
       cell: (row) => (
         <Button
-          variant="danger"
+          variant="ghost"
           size="sm"
-          className="text-[12px]"
-          onClick={() => handleOpenModal(row)}
+          icon={<Eye className="w-3.5 h-3.5" />}
+          className="text-xs"
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          title="View Ticket Details"
         >
-          Emergency Reassign
+          View
         </Button>
       )
     }
