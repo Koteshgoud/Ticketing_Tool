@@ -608,10 +608,17 @@ export const AdminApiService = {
     const data = result.data;
     const ticket = mapBackendTicket(data);
 
-    const backendResult = await fetchBackendAttachmentsDetailed(idOrNum);
-    const mappedAttachments = backendResult.attachments.map((a) =>
-      a.size && a.size !== 'N/A' ? `${a.name} (${a.size})` : a.name
-    );
+    let mappedAttachments = ticket.attachments || [];
+    let attachmentsError: string | null = null;
+    if (mappedAttachments.length === 0) {
+      const backendResult = await fetchBackendAttachmentsDetailed(idOrNum);
+      if (backendResult.attachments.length > 0) {
+        mappedAttachments = backendResult.attachments.map((a) =>
+          a.size && a.size !== 'N/A' ? `${a.name} (${a.size})` : a.name
+        );
+      }
+      attachmentsError = backendResult.error;
+    }
 
     const history =
       Array.isArray(data.history) && data.history.length > 0
@@ -627,7 +634,7 @@ export const AdminApiService = {
       ...ticket,
       attachments: mappedAttachments,
       attachmentsError:
-        backendResult.error && mappedAttachments.length === 0 ? backendResult.error : null,
+        attachmentsError && mappedAttachments.length === 0 ? attachmentsError : null,
       history,
     };
   },

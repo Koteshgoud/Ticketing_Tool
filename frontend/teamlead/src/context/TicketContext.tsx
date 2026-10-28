@@ -58,11 +58,13 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const { user } = useAuth();
   const userId = user?.id || '';
 
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>(() => ticketService.getCachedTickets() || []);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !ticketService.getCachedTickets() || ticketService.getCachedTickets()!.length === 0
+  );
   const [error, setError] = useState<string | null>(null);
 
   const currentUserName = user?.name || 'Team Lead';
@@ -80,7 +82,8 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   const refresh = useCallback(async (silent = false, force = false) => {
-    if (!silent) {
+    const hasCache = !!ticketService.getCachedTickets() && ticketService.getCachedTickets()!.length > 0;
+    if (!silent && !hasCache) {
       setIsLoading(true);
     }
     if (force) {
@@ -89,7 +92,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const result = await ticketService.getTicketsDetailed(force);
     if (result.error) {
       setError(result.error);
-      if (!silent) {
+      if (!silent && !hasCache) {
         setTickets([]);
         setEscalations([]);
       }
@@ -100,9 +103,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setEscalations(loaded || []);
     }
     await loadNotifications();
-    if (!silent) {
-      setIsLoading(false);
-    }
+    setIsLoading(false);
   }, [loadNotifications]);
 
   useEffect(() => {

@@ -59,8 +59,10 @@ export const AppRoutes: React.FC = () => {
         }
       >
         <Route path="/dashboard" element={<EmployeeDashboard />} />
+        <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
         <Route path="/knowledge-base" element={<KnowledgeBase />} />
         <Route path="/tickets" element={<MyTickets />} />
+        <Route path="/employee/tickets" element={<MyTickets />} />
         <Route path="/tickets/:id" element={<AssignedTicketDetails />} />
         <Route path="/assigned-tickets" element={<AssignedTickets />} />
         <Route path="/assigned-tickets/:id" element={<AssignedTicketDetails />} />

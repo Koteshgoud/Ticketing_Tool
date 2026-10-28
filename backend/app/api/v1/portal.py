@@ -20,6 +20,7 @@ from app.db.supabase import get_supabase_admin_client
 from app.services.access import (
     ROLE_ADMIN,
     ROLE_TEAMLEAD,
+    ROLE_EMPLOYEE,
     _scopes_overlap,
     fetch_all_users_cached,
     invalidate_team_cache,
@@ -85,9 +86,9 @@ def _visible_user(
         if managed_ids is None:
             managed_ids = {str(m.get("id")) for m in teamlead_managed_employees(user)}
         return str(row.get("id") or "") in managed_ids
-    # Employees may see Team Leads from any department (to route tickets to the
-    # proper department lead), plus colleagues in their own department.
-    if normalize_role(row.get("role")) == ROLE_TEAMLEAD:
+    # Employees may see Team Leads and colleagues across departments (to route tickets
+    # to the proper department lead and tag team members).
+    if normalize_role(row.get("role")) in (ROLE_TEAMLEAD, ROLE_EMPLOYEE):
         return True
     return _scopes_overlap(user.get("department"), row.get("department"))
 
@@ -138,24 +139,37 @@ def get_team_lead_employees(
     context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
 ) -> list[dict[str, Any]]:
     clean_tl_id = str(team_lead_id).strip()
-    sb = get_supabase_admin_client()
-    try:
-        res = sb.table("users").select("*").eq("id", clean_tl_id).limit(1).execute()
-        rows = res.data or []
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Database error: {exc}") from exc
 
-    if not rows:
+    # 1. Fast path: check in-memory cached users first (0ms latency)
+    all_users = fetch_all_users_cached()
+    tl_user = next(
+        (
+            u for u in all_users
+            if str(u.get("id") or "").strip().lower() == clean_tl_id.lower()
+            or str(u.get("email") or "").strip().lower() == clean_tl_id.lower()
+        ),
+        None,
+    )
+
+    if not tl_user:
+        sb = get_supabase_admin_client()
         try:
-            res = sb.table("users").select("*").eq("email", clean_tl_id.lower()).limit(1).execute()
+            res = sb.table("users").select("*").eq("id", clean_tl_id).limit(1).execute()
             rows = res.data or []
-        except Exception:
-            pass
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Database error: {exc}") from exc
 
-    if not rows:
-        raise HTTPException(status_code=404, detail="Team lead not found")
+        if not rows:
+            try:
+                res = sb.table("users").select("*").eq("email", clean_tl_id.lower()).limit(1).execute()
+                rows = res.data or []
+            except Exception:
+                pass
 
-    tl_user = rows[0]
+        if not rows:
+            raise HTTPException(status_code=404, detail="Team lead not found")
+        tl_user = rows[0]
+
     if normalize_role(tl_user.get("role")) != ROLE_TEAMLEAD:
         raise HTTPException(status_code=400, detail="Specified user is not a Team Lead")
 
@@ -221,19 +235,28 @@ def update_profile(
 
 # ── Departments ──────────────────────────────────────────────────────────────
 
+_DEPARTMENTS_CACHE: tuple[float, list[dict[str, Any]]] | None = None
+_DEPARTMENTS_CACHE_TTL = 300.0  # 5 minutes
+
 @router.get("/departments", summary="List configured departments")
 def get_departments(
     context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
 ) -> list[dict[str, Any]]:
+    global _DEPARTMENTS_CACHE
+    now = time.time()
+    if _DEPARTMENTS_CACHE and (now - _DEPARTMENTS_CACHE[0]) < _DEPARTMENTS_CACHE_TTL:
+        return _DEPARTMENTS_CACHE[1]
+
     sb = get_supabase_admin_client()
     try:
         res = sb.table("departments").select("id, name, code, display_aliases, description, is_active").eq("is_active", True).order("id").execute()
         rows = res.data or []
         if rows:
+            _DEPARTMENTS_CACHE = (now, rows)
             return rows
     except Exception as exc:
         print(f"[portal] departments table fallback: {exc}")
-    return [
+    fallback = [
         {"id": 1, "name": "IT Support", "code": "ITSUPPORT", "display_aliases": ["IT Support", "IT Support Team", "IT"]},
         {"id": 2, "name": "Finance", "code": "FINANCE", "display_aliases": ["Finance", "Finance & Payroll"]},
         {"id": 3, "name": "HR", "code": "HR", "display_aliases": ["HR", "HR Operations", "HR & Benefits"]},
@@ -242,12 +265,14 @@ def get_departments(
         {"id": 9, "name": "General Administration", "code": "GENADMIN", "display_aliases": ["General Administration", "Administration"]},
         {"id": 10, "name": "Other", "code": "OTHER", "display_aliases": ["Other", "Others"]},
     ]
+    _DEPARTMENTS_CACHE = (now, fallback)
+    return fallback
 
 
 # ── Notifications ────────────────────────────────────────────────────────────
 
 _NOTIF_CACHE: tuple[float, list[dict[str, Any]]] | None = None
-_NOTIF_CACHE_TTL = 3.0  # seconds
+_NOTIF_CACHE_TTL = 15.0  # seconds
 
 
 def invalidate_notifications_cache() -> None:

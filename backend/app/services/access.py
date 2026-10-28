@@ -142,6 +142,18 @@ def load_current_user(payload: dict[str, Any]) -> dict[str, Any]:
         if now - cached_time < _USER_CACHE_TTL:
             return cached_row
 
+    # Fast path: check memory-cached users first (eliminates WAN roundtrip on every API request)
+    all_users = fetch_all_users_cached()
+    for u in all_users:
+        uid = str(u.get("id") or "").strip()
+        uemail = str(u.get("email") or "").strip().lower()
+        if (sub and uid.lower() == sub.lower()) or (email and uemail == email):
+            if uid:
+                _USER_CACHE[uid] = (now, u)
+            if uemail:
+                _USER_CACHE[uemail] = (now, u)
+            return u
+
     sb = get_supabase_admin_client()
     row: dict[str, Any] | None = None
     if sub:

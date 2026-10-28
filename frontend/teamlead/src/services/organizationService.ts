@@ -40,11 +40,28 @@ export const DEPARTMENTS: DepartmentItem[] = [
   { id: 'D006', name: 'Other' },
 ];
 
-export const TEAM_LEADS: TeamLeadItem[] = [];
+export const INITIAL_TEAM_LEADS: TeamLeadItem[] = [
+  { id: 'OKL003', employeeId: 'OKL003', name: 'Kotesh', role: 'IT Support Team Lead', departmentId: 'D001', departmentName: 'IT Support', email: 'k.ananthu@oklut.com' },
+  { id: 'OKL015', employeeId: 'OKL015', name: 'Manikanta', role: 'IT Support Team Lead', departmentId: 'D001', departmentName: 'IT Support', email: 'm.nisankam@oklut.com' },
+  { id: 'OKL013', employeeId: 'OKL013', name: 'soniya', role: 'HR Team Lead', departmentId: 'D003', departmentName: 'HR', email: 'soni@gmail.com' },
+];
 
-export const EMPLOYEES: EmployeeItem[] = [];
+export const INITIAL_EMPLOYEES: EmployeeItem[] = [
+  { id: 'OKL001', employeeId: 'OKL001', name: 'aditya', role: 'Team Member', teamLeadId: 'OKL003', departmentId: 'D001', departmentName: 'IT Support', email: 'a.reddy@oklut.com' },
+  { id: 'OKL002', employeeId: 'OKL002', name: 'uday', role: 'Team Member', teamLeadId: 'OKL003', departmentId: 'D001', departmentName: 'IT Support', email: 'u.vadlamudi@oklut.com' },
+  { id: 'OKL016', employeeId: 'OKL016', name: 'sudha', role: 'Team Member', teamLeadId: 'OKL015', departmentId: 'D001', departmentName: 'IT Support', email: 'sudha@gmail.com' },
+  { id: 'OKL014', employeeId: 'OKL014', name: 'Ramya', role: 'Team Member', teamLeadId: 'OKL013', departmentId: 'D003', departmentName: 'HR', email: 'ramya@gmail.com' },
+];
 
-const _leadEmployeesCache = new Map<string, EmployeeItem[]>();
+export const TEAM_LEADS: TeamLeadItem[] = [...INITIAL_TEAM_LEADS];
+
+export const EMPLOYEES: EmployeeItem[] = [...INITIAL_EMPLOYEES];
+
+const _leadEmployeesCache = new Map<string, EmployeeItem[]>([
+  ['OKL003', [INITIAL_EMPLOYEES[0], INITIAL_EMPLOYEES[1]]],
+  ['OKL015', [INITIAL_EMPLOYEES[2]]],
+  ['OKL013', [INITIAL_EMPLOYEES[3]]],
+]);
 
 /**
  * Directory sync state. The Team Lead portal reads the same directory from
@@ -303,13 +320,20 @@ export const OrganizationService = {
             id: u.id,
             employeeId: u.id,
             name: u.name,
-            role: u.designation || 'Support Specialist',
+            role: u.designation || 'Team Member',
             teamLeadId: leadId,
             departmentId: deptObj.id,
             departmentName: deptName,
             email: u.email,
           };
           EMPLOYEES.push(empItem);
+          if (leadId) {
+            const current = _leadEmployeesCache.get(leadId) || [];
+            if (!current.some(e => e.id === empItem.id)) {
+              current.push(empItem);
+              _leadEmployeesCache.set(leadId, current);
+            }
+          }
         }
       } catch (e) {
         console.warn('OrganizationService: syncFromDatabase error', e);
