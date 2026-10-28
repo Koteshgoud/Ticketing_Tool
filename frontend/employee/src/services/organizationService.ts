@@ -225,7 +225,6 @@ export const OrganizationService = {
     if (!force && _lastSyncAt > 0 && Date.now() - _lastSyncAt < _SYNC_TTL_MS && TEAM_LEADS.length > 0) {
       return;
     }
-    }
 
     _syncInflight = (async () => {
       try {
