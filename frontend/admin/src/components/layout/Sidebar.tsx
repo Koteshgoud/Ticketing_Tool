@@ -47,9 +47,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
     slaBreached: 0,
   });
 
-  useEffect(() => {
+  const fetchStats = () => {
     AdminApiService.getDashboardStats()
       .then((data) => {
+        if (!data) return;
         setStats({
           escalated: data.escalatedTickets ?? 0,
           slaRisk: data.slaRiskCount ?? 0,
@@ -57,6 +58,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose }) => 
         });
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchStats();
+    window.addEventListener('ticket-updated', fetchStats);
+    window.addEventListener('storage', fetchStats);
+    return () => {
+      window.removeEventListener('ticket-updated', fetchStats);
+      window.removeEventListener('storage', fetchStats);
+    };
   }, []);
 
   const toggleGroup = (groupTitle: string) => {

@@ -8,11 +8,10 @@ import {
   Users,
   AlertTriangle,
   BookOpen,
-  User,
   ChevronLeft,
   ChevronRight,
   LogOut,
-  TicketCheck
+  TicketCheck,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';
@@ -40,7 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleLogoutConfirm = () => {
     setIsLogoutModalOpen(false);
     logout();
-    navigate('/signup');
+    navigate('/login', { replace: true });
   };
 
   const assignedCount = (tickets || []).filter(
@@ -59,7 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { label: 'Employees', path: '/teamlead/employees', icon: Users },
     { label: 'Escalations', path: '/teamlead/escalations', icon: AlertTriangle },
     { label: 'Knowledge Base', path: '/teamlead/knowledge-base', icon: BookOpen },
-    { label: 'Profile', path: '/teamlead/profile', icon: User },
   ];
 
   return (

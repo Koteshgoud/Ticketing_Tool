@@ -12,14 +12,16 @@ import {
   User as UserIcon
 } from 'lucide-react';
 import { logoutUser, getCurrentSessionUser } from '../../services/unifiedAuth';
-import { supabase } from '../../services/supabaseClient';
+import { apiRequest, apiRequestSafe } from '../../services/backendAuth';
 
 export interface NotificationItem {
   id: string;
   title: string;
+  message?: string;
   time: string;
   type: string;
   isRead?: boolean;
+  ticketId?: string;
 }
 
 interface TopNavigationProps {
@@ -45,56 +47,41 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
   const getSessionProfile = () => {
     // Purge any stale legacy hyma entries
     try {
-      const userRaw = localStorage.getItem('platform_current_user');
+      const userRaw = sessionStorage.getItem('platform_current_user') || localStorage.getItem('platform_current_user');
       if (userRaw && (userRaw.toLowerCase().includes('hyma') || userRaw.toLowerCase().includes('admin@company.com'))) {
+        sessionStorage.removeItem('platform_current_user');
         localStorage.removeItem('platform_current_user');
       }
-      const cached = localStorage.getItem('admin_profile_data');
+      const cached = sessionStorage.getItem('admin_profile_data') || localStorage.getItem('admin_profile_data');
       if (cached && (cached.toLowerCase().includes('hyma') || cached.toLowerCase().includes('admin@company.com'))) {
+        sessionStorage.removeItem('admin_profile_data');
+        sessionStorage.removeItem('admin_profile_avatar');
         localStorage.removeItem('admin_profile_data');
         localStorage.removeItem('admin_profile_avatar');
       }
     } catch {}
 
     const session = getCurrentSessionUser();
-    
-    // In the Admin Portal, she is the Admin, never a team member
-    let roleLabel = 'Admin';
-    if (session?.role === 'admin') {
-      roleLabel = 'Admin';
-    } else if (session?.role === 'teamlead') {
-      roleLabel = 'Team Lead';
-    } else if (session?.role === 'employee') {
-      roleLabel = 'Employee';
-    } else {
-      roleLabel = 'Admin';
-    }
+    const roleLabel =
+      session?.role === 'admin'
+        ? 'Admin'
+        : session?.role === 'teamlead'
+        ? 'Team Lead'
+        : session?.role === 'employee'
+        ? 'Employee'
+        : '';
 
     if (session && session.name) {
       return {
         name: session.name,
-        avatarUrl: session.avatarUrl || localStorage.getItem('admin_profile_avatar') || '',
+        avatarUrl: session.avatarUrl || '',
         role: roleLabel,
       };
     }
 
-    try {
-      const cached = localStorage.getItem('admin_profile_data');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed?.name && !parsed.name.toLowerCase().includes('hyma')) {
-          return {
-            name: parsed.name,
-            avatarUrl: parsed.avatarUrl || localStorage.getItem('admin_profile_avatar') || '',
-            role: roleLabel,
-          };
-        }
-      }
-    } catch {}
-
     return {
-      name: session?.name || 'Admin User',
-      avatarUrl: localStorage.getItem('admin_profile_avatar') || session?.avatarUrl || '',
+      name: '',
+      avatarUrl: '',
       role: roleLabel,
     };
   };
@@ -117,47 +104,76 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     return () => window.removeEventListener('storage', checkProfile);
   }, []);
 
-  // Fetch real-time / persisted notifications from portal_notifications
-  useEffect(() => {
-    const fetchAdminNotifications = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('portal_notifications')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .limit(20);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-        if (!error && data) {
-          const allowedRoles = ['all', 'admin'];
-          const filtered = data.filter((n: any) => allowedRoles.includes(n.for_role));
-          const mapped: NotificationItem[] = filtered.map((n: any) => ({
-            id: n.id,
-            title: n.title || 'System Notification',
-            time: n.timestamp ? new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-            type: n.type || 'info',
-            isRead: !!n.read,
-          }));
-          setNotifications(mapped);
-        }
-      } catch (err) {
-        console.warn('Error fetching admin notifications:', err);
+  // Fetch persisted, per-recipient notifications from the backend.
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchAdminNotifications = async () => {
+      const result = await apiRequestSafe<any[]>('/notifications?limit=20');
+      if (cancelled) return;
+      if (result.error || !Array.isArray(result.data)) {
+        // Keep the last known list, but never display a fabricated badge.
+        setUnreadCount(0);
+        return;
       }
+      const mapped: NotificationItem[] = result.data.map((n: any) => ({
+        id: n.id,
+        title: n.title || 'System Notification',
+        message: n.message,
+        ticketId: n.ticket_id || undefined,
+        time: n.timestamp
+          ? new Date(n.timestamp).toLocaleString([], {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : 'Just now',
+        type: n.type || 'info',
+        isRead: !!n.read,
+      }));
+      setNotifications(mapped);
+
+      const countResult = await apiRequestSafe<{ count: number }>('/notifications/unread-count');
+      if (cancelled) return;
+      setUnreadCount(
+        countResult.data && typeof countResult.data.count === 'number'
+          ? countResult.data.count
+          : mapped.filter((n) => !n.isRead).length
+      );
     };
 
     fetchAdminNotifications();
     const interval = setInterval(fetchAdminNotifications, 8000);
-    return () => clearInterval(interval);
+    const onTicketUpdated = () => fetchAdminNotifications();
+    window.addEventListener('ticket-updated', onTicketUpdated);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('ticket-updated', onTicketUpdated);
+    };
   }, []);
 
-  const hasUnread = notifications.some((n) => !n.isRead);
+  const hasUnread = unreadCount > 0;
 
   const handleMarkAllAsRead = async () => {
+    await apiRequestSafe('/notifications/read-all', { method: 'POST' });
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    try {
-      await supabase.from('portal_notifications').update({ read: true }).eq('read', false);
-    } catch {}
-    if (onMarkAllAsRead) {
-      onMarkAllAsRead();
+    setUnreadCount(0);
+    if (onMarkAllAsRead) onMarkAllAsRead();
+  };
+
+  const handleNotificationClick = async (n: NotificationItem) => {
+    if (!n.isRead) {
+      await apiRequestSafe(`/notifications/${encodeURIComponent(n.id)}/read`, { method: 'POST' });
+      setNotifications((prev) => prev.map((item) => (item.id === n.id ? { ...item, isRead: true } : item)));
+      setUnreadCount((count) => Math.max(0, count - 1));
+    }
+    setShowNotifications(false);
+    if (n.ticketId) {
+      navigate(`/admin/workspace/tickets/${encodeURIComponent(n.ticketId)}`);
     }
   };
 
@@ -198,9 +214,25 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('search');
+    if (q !== null) {
+      setSearchValue(q);
+    }
+  }, [location.search]);
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchValue(e.target.value);
-    if (onSearch) onSearch(e.target.value);
+    const query = e.target.value;
+    setSearchValue(query);
+    if (onSearch) onSearch(query);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navigate(`/admin/workspace/all?search=${encodeURIComponent(searchValue)}`);
+    }
   };
 
   return (
@@ -227,7 +259,8 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
             type="text"
             value={searchValue}
             onChange={handleSearchChange}
-            placeholder="Search tickets, users, settings..."
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search tickets by ID, title, requester, assignee..."
             className="w-full bg-slate-100/70 border border-slate-200/80 rounded-full pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all"
           />
         </div>
@@ -253,8 +286,8 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
           >
             <Bell className="w-4 h-4" />
             {hasUnread && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#0284C7] text-white font-bold text-[9px] flex items-center justify-center ring-2 ring-white">
-                3
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#0284C7] text-white font-bold text-[9px] flex items-center justify-center ring-2 ring-white">
+                {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
@@ -278,8 +311,13 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                   </div>
                 ) : (
                   notifications.map((n) => (
-                    <div key={n.id} className={`p-3 hover:bg-slate-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-sky-50/50' : ''}`}>
+                    <div
+                      key={n.id}
+                      onClick={() => handleNotificationClick(n)}
+                      className={`p-3 hover:bg-slate-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-sky-50/50' : ''}`}
+                    >
                       <p className="text-xs font-medium text-slate-800">{n.title}</p>
+                      {n.message && <p className="text-[10.5px] text-slate-600 mt-0.5 line-clamp-2">{n.message}</p>}
                       <p className="text-[10px] text-slate-500 mt-0.5">{n.time}</p>
                     </div>
                   ))
@@ -337,7 +375,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({
                 onClick={() => {
                   setShowProfileMenu(false);
                   logoutUser();
-                  navigate('/login');
+                  navigate('/login', { replace: true });
                 }}
                 className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer font-semibold"
               >

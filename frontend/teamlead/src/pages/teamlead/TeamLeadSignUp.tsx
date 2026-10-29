@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { ShieldCheck, Eye, EyeOff, Lock, Mail, User, Users, Briefcase, ArrowRight } from 'lucide-react';
-import { supabase } from '../../services/supabaseClient';
+import { Eye, EyeOff, Lock, Mail, User, Users, Briefcase, ArrowRight } from 'lucide-react';
+import { registerBackend } from '../../services/backendAuth';
 
 export const TeamLeadSignUp: React.FC = () => {
   const { isAuthenticated } = useAuth();
@@ -48,35 +48,17 @@ export const TeamLeadSignUp: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
 
     try {
-      const { data: existing } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', cleanEmail)
-        .maybeSingle();
+      const res = await registerBackend({
+        name: fullName.trim(),
+        email: cleanEmail,
+        password,
+        department,
+        team: teamName || 'Operations',
+        designation: 'Team Lead',
+      });
 
-      if (existing) {
-        setErrorMsg('An account with this email address already exists. Please log in instead.');
-        setIsLoading(false);
-        return;
-      }
-
-      const newUserId = `usr-tl-${Date.now()}`;
-      const { error: insErr } = await supabase
-        .from('users')
-        .insert([{
-          id: newUserId,
-          name: fullName.trim(),
-          email: cleanEmail,
-          department,
-          designation: 'Team Lead',
-          team: teamName || 'Operations',
-          role: 'teamlead',
-          password,
-          status: 'Active',
-        }]);
-
-      if (insErr) {
-        setErrorMsg(`Registration error: ${insErr.message}`);
+      if (!res.ok) {
+        setErrorMsg(res.error || 'Registration failed. Please try again.');
         setIsLoading(false);
         return;
       }
@@ -90,7 +72,8 @@ export const TeamLeadSignUp: React.FC = () => {
         }
       });
     } catch (err: any) {
-      setErrorMsg('Unable to connect to database. Please try again.');
+      console.error('Registration error:', err);
+      setErrorMsg('Unable to connect to registration service. Please try again.');
       setIsLoading(false);
     }
   };

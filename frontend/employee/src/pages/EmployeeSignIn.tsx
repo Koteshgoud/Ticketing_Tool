@@ -1,22 +1,33 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation, Navigate } from 'react-router-dom';
-import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 
-import { supabase } from '../services/supabaseClient';
+import { loginBackend } from '../services/backendAuth';
+import { EmployeeService } from '../services/employeeService';
 
 export const EmployeeSignIn: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // If already authenticated, redirect to Dashboard
+  // If already authenticated with valid tokens, redirect to Dashboard
   try {
-    const raw = localStorage.getItem('platform_current_user');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.email) {
-        return <Navigate to="/dashboard" replace />;
+    const explicitlyLoggedOut =
+      sessionStorage.getItem('platform_explicitly_logged_out') === 'true' ||
+      localStorage.getItem('platform_explicitly_logged_out') === 'true';
+    if (!explicitlyLoggedOut) {
+      const raw = sessionStorage.getItem('platform_current_user') || localStorage.getItem('platform_current_user');
+      const hasToken =
+        !!localStorage.getItem('backend_auth_token') ||
+        !!sessionStorage.getItem('backend_auth_token') ||
+        !!localStorage.getItem('backend_refresh_token') ||
+        !!sessionStorage.getItem('backend_refresh_token');
+      if (raw && hasToken) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.email) {
+          return <Navigate to="/dashboard" replace />;
+        }
       }
     }
   } catch {}
@@ -25,6 +36,7 @@ export const EmployeeSignIn: React.FC = () => {
   const queryEmail = new URLSearchParams(location.search).get('email') || '';
   const [email, setEmail] = useState(stateData?.registeredEmail || queryEmail);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; auth?: string }>({});
   const [successBanner, setSuccessBanner] = useState<string | null>(stateData?.registrationSuccess || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,25 +64,13 @@ export const EmployeeSignIn: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
 
     try {
-      const { data: dbUser, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      if (error || !dbUser) {
-        setErrors({ auth: 'No account found with this email. Please contact your organization administrator.' });
-        setIsSubmitting(false);
+      const res = await loginBackend(cleanEmail, password);
+      if (!res.ok) {
+        setErrors({ auth: res.error || 'Invalid credentials. Please verify your email and password.' });
         return;
       }
 
-      const validPass = dbUser.password === password || (!dbUser.password && password === 'Password123');
-      if (!validPass) {
-        setErrors({ auth: 'Incorrect password. Please verify your credentials.' });
-        setIsSubmitting(false);
-        return;
-      }
-
+      const dbUser = res.user;
       const userSession = {
         id: dbUser.id,
         name: dbUser.name || cleanEmail.split('@')[0],
@@ -78,13 +78,18 @@ export const EmployeeSignIn: React.FC = () => {
         department: dbUser.department || 'Operations',
         role: dbUser.role || 'employee',
         status: dbUser.status || 'Active',
+        avatar: dbUser.avatar || null,
       };
+      sessionStorage.setItem('platform_current_user', JSON.stringify(userSession));
       localStorage.setItem('platform_current_user', JSON.stringify(userSession));
-      setIsSubmitting(false);
-      navigate('/dashboard');
+      sessionStorage.removeItem('platform_explicitly_logged_out');
+      localStorage.removeItem('platform_explicitly_logged_out');
+      EmployeeService.clearCache();
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       console.error('Sign in exception:', err);
-      setErrors({ auth: 'Unable to connect to database. Please try again.' });
+      setErrors({ auth: 'Unable to connect to authentication service. Please try again.' });
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -135,15 +140,9 @@ export const EmployeeSignIn: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-700">Password</label>
-                <Link
-                  to={email.trim() ? `/forgot-password?email=${encodeURIComponent(email.trim())}&warning=true` : "/forgot-password"}
-                  className="text-xs text-[#0284C7] hover:underline font-medium cursor-pointer"
-                >
-                  Forgot Password?
-                </Link>
               </div>
               <Input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => {
@@ -152,6 +151,17 @@ export const EmployeeSignIn: React.FC = () => {
                 }}
                 error={errors.password}
                 icon={<Lock className="w-4 h-4" />}
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="p-1 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors cursor-pointer"
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
               />
             </div>
 

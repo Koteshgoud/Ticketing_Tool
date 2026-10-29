@@ -1,112 +1,105 @@
+import { Ticket } from '../types/ticket';
 import { User } from '../types/user';
 import { Escalation } from '../types/escalation';
 import { NotificationItem } from '../types/notification';
-import { supabase } from './supabaseClient';
+import { apiRequest, apiRequestSafe, jsonInit } from './backendAuth';
+import { mapTicket, ticketService } from './ticketService';
+
+function mapUser(u: any): User {
+  return {
+    id: String(u.id),
+    name: u.name || (u.email ? u.email.split('@')[0] : 'Employee'),
+    email: u.email || '',
+    phone: u.phone || '',
+    role: (u.role === 'teamlead' ? 'teamlead' : u.role === 'admin' ? 'admin' : 'employee') as User['role'],
+    department: u.department || 'Operations',
+    designation: u.designation || (u.role === 'teamlead' ? 'Team Lead' : 'Team Member'),
+    team: u.team || '',
+    avatar: u.avatar || '',
+    location: u.location || '',
+    status: u.status === 'Inactive' ? 'Inactive' : 'Active',
+  };
+}
+
+function formatNotificationTime(value: any): string {
+  if (!value) return 'Just now';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
 
 export const teamLeadService = {
+  /** Users inside the team lead's department/team scope (server-enforced). */
   getEmployees: async (): Promise<User[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        return data
-          .filter((u: any) => u.role !== 'admin')
-          .map((u: any) => ({
-            id: u.id,
-            name: u.name || (u.email ? u.email.split('@')[0] : 'Employee'),
-            email: u.email,
-            phone: u.phone || '',
-            role: (u.role === 'teamlead' ? 'teamlead' : 'employee'),
-            department: u.department || 'Operations',
-            designation: u.designation || (u.role === 'teamlead' ? 'Team Lead' : 'Team Member'),
-            team: u.team || '',
-            avatar: u.avatar || '',
-            location: u.location || '',
-            status: (u.status === 'Inactive' ? 'Inactive' : 'Active'),
-          }));
-      }
-    } catch (e) {
-      console.error('Supabase getEmployees error:', e);
+    const result = await apiRequestSafe<any[]>('/team/users');
+    if (result.error || !Array.isArray(result.data)) {
+      console.error('Could not load team users:', result.error);
+      return [];
     }
-    return [];
+    return result.data.map(mapUser);
   },
 
-  getEscalations: async (): Promise<Escalation[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('escalations')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        return data.map((esc: any) => ({
-          id: esc.id,
-          ticketId: esc.ticket_id || '',
-          subject: esc.subject || 'Escalation',
-          priority: esc.priority || 'High',
-          escalatedBy: esc.escalated_by || 'Team Lead',
-          escalatedTo: esc.escalated_to || 'Tier 3 Operations',
-          escalationReason: esc.escalation_reason || '',
-          slaStatus: esc.sla_status || 'Breached SLA',
-          escalatedDate: esc.escalated_date || (esc.created_at ? esc.created_at.slice(0, 10) : ''),
-          status: (esc.status || 'Pending Review') as any,
-        }));
-      }
-    } catch (e) {
-      console.error('Supabase getEscalations error:', e);
+  /** Escalations are derived from the team lead's scoped escalated tickets. */
+  getEscalations: async (providedTickets?: Ticket[]): Promise<Escalation[]> => {
+    let list = providedTickets;
+    if (!list) {
+      const result = await ticketService.getTicketsDetailed();
+      list = result.tickets;
     }
-    return [];
+    return (list || [])
+      .filter((t) => String(t.status).toLowerCase() === 'escalated')
+      .map((t) => ({
+        id: `esc-${t.id}`,
+        ticketId: t.id,
+        subject: t.subject,
+        priority: t.priority,
+        escalatedBy: t.assignedBy || t.employee || 'Admin',
+        escalatedTo: 'Tier 3 Operations',
+        escalationReason: t.escalationReason || 'Escalated ticket requiring attention',
+        slaStatus: t.slaStatus,
+        escalatedDate: (t.updatedAt || t.createdAt).slice(0, 10),
+        status: 'Pending Review' as const,
+      }));
   },
 
-  getNotifications: async (userRole = 'teamlead', userName = ''): Promise<NotificationItem[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('portal_notifications')
-        .select('*')
-        .order('timestamp', { ascending: false });
-
-      if (!error && data) {
-        const allowedRoles = ['all', userRole, 'teamlead'];
-        const filtered = data.filter((n: any) => {
-          if (allowedRoles.includes(n.for_role)) return true;
-          if (userName && (n.message?.toLowerCase().includes(userName.toLowerCase()) || n.title?.toLowerCase().includes(userName.toLowerCase()))) return true;
-          return false;
-        });
-
-        return filtered.map((n: any) => ({
-          id: n.id,
-          title: n.title || 'Notification',
-          message: n.message || '',
-          timestamp: n.timestamp ? new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
-          read: !!n.read,
-          ticketId: n.ticket_id || undefined,
-          type: (n.type || 'info') as any,
-          forRole: (n.for_role || 'all') as any,
-        }));
-      }
-    } catch (e) {
-      console.error('Supabase getNotifications error:', e);
+  getNotifications: async (): Promise<NotificationItem[]> => {
+    const result = await apiRequestSafe<any[]>('/notifications');
+    if (result.error || !Array.isArray(result.data)) {
+      console.error('Could not load notifications:', result.error);
+      return [];
     }
-    return [];
+    return result.data.map((n: any) => ({
+      id: String(n.id),
+      title: n.title || 'Notification',
+      message: n.message || '',
+      timestamp: formatNotificationTime(n.timestamp),
+      read: !!n.read,
+      ticketId: n.ticket_id || undefined,
+      type: (n.type || 'info') as NotificationItem['type'],
+      forRole: (n.for_role || 'teamlead') as NotificationItem['forRole'],
+    }));
   },
 
   markNotificationRead: async (id: string): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('portal_notifications').update({ read: true }).eq('id', id);
-      return !error;
-    } catch {
+      await apiRequest(`/notifications/${encodeURIComponent(id)}/read`, jsonInit('POST'));
+      return true;
+    } catch (e) {
+      console.warn('Could not mark notification read:', e);
       return false;
     }
   },
 
   markAllNotificationsRead: async (): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('portal_notifications').update({ read: true }).eq('read', false);
-      return !error;
-    } catch {
+      await apiRequest('/notifications/read-all', jsonInit('POST'));
+      return true;
+    } catch (e) {
+      console.warn('Could not mark notifications read:', e);
       return false;
     }
   },
@@ -119,53 +112,53 @@ export const teamLeadService = {
     forRole?: 'teamlead' | 'employee' | 'admin' | 'all';
   }): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('portal_notifications').insert([{
-        id: `notif-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        ticket_id: notif.ticketId || null,
-        title: notif.title,
-        message: notif.message,
-        type: notif.type || 'info',
-        for_role: notif.forRole || 'all',
-        read: false,
-        timestamp: new Date().toISOString(),
-      }]);
-      return !error;
-    } catch {
+      await apiRequest(
+        '/notifications',
+        jsonInit('POST', {
+          ticket_id: notif.ticketId || null,
+          title: notif.title,
+          message: notif.message,
+          type: notif.type || 'info',
+          for_role: notif.forRole || 'all',
+        }),
+      );
+      return true;
+    } catch (e) {
+      console.warn('Could not create notification:', e);
       return false;
     }
   },
 
-  reassignTicket: async (ticketId: string, newEmployeeId: string, newEmployeeName?: string): Promise<boolean> => {
+  reassignTicket: async (
+    ticketId: string,
+    newEmployeeId: string,
+    newEmployeeName?: string,
+  ): Promise<boolean> => {
     try {
-      const updates: Record<string, any> = {
-        assigned_agent_id: newEmployeeId,
-      };
-      if (newEmployeeName) updates.assigned_agent = newEmployeeName;
-      const { error } = await supabase.from('tickets').update(updates).eq('id', ticketId);
-      return !error;
-    } catch {
+      await apiRequest(
+        `/tickets/${encodeURIComponent(ticketId)}/assign`,
+        jsonInit('POST', {
+          assigned_agent_id: newEmployeeId,
+          assigned_agent: newEmployeeName || undefined,
+        }),
+      );
+      return true;
+    } catch (e) {
+      console.warn('Could not reassign ticket:', e);
       return false;
     }
   },
 
   escalateTicket: async (ticketId: string, reason: string): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('tickets').update({ status: 'Escalated', escalation_reason: reason }).eq('id', ticketId);
-      await supabase.from('escalations').insert([{
-        id: `ESC-${Date.now()}`,
-        ticket_id: ticketId,
-        subject: `Escalated Ticket ${ticketId}`,
-        priority: 'High',
-        escalated_by: 'Team Lead',
-        escalated_to: 'Tier 3 Operations',
-        escalation_reason: reason,
-        sla_status: 'Breached SLA',
-        escalated_date: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        status: 'Pending Review',
-      }]);
-      return !error;
-    } catch {
+      await apiRequest(
+        `/tickets/${encodeURIComponent(ticketId)}/escalate`,
+        jsonInit('POST', { reason }),
+      );
+      return true;
+    } catch (e) {
+      console.warn('Could not escalate ticket:', e);
       return false;
     }
-  }
+  },
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
   Bell,
@@ -11,6 +11,7 @@ import {
   User as UserIcon
 } from 'lucide-react';
 import { EmployeeService } from '../../services/employeeService';
+import { clearBackendSession } from '../../services/backendAuth';
 import type { EmployeeProfile, EmployeeNotificationItem } from '../../types';
 
 interface EmployeeTopNavProps {
@@ -23,6 +24,7 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
   onToggleMobileSidebar,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchValue, setSearchValue] = useState('');
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -56,10 +58,25 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('search');
+    if (q !== null) {
+      setSearchValue(q);
+    }
+  }, [location.search]);
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchValue(query);
     if (onSearch) onSearch(query);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navigate(`/employee/tickets?search=${encodeURIComponent(searchValue)}`);
+    }
   };
 
   const handleMarkAllAsRead = () => {
@@ -93,7 +110,8 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
             type="text"
             value={searchValue}
             onChange={handleSearchChange}
-            placeholder="Search tickets, priority, status..."
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search tickets by ID, subject, requester, assignee..."
             className="w-full bg-slate-100/70 border border-slate-200/80 rounded-full pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all"
           />
         </div>
@@ -225,10 +243,22 @@ export const EmployeeTopNav: React.FC<EmployeeTopNavProps> = ({
 
               <button
                 onClick={() => {
-                  setShowProfileMenu(false);
+                  EmployeeService.clearCache();
+                  clearBackendSession();
                   localStorage.removeItem('platform_current_user');
+                  sessionStorage.removeItem('platform_current_user');
+                  localStorage.removeItem('backend_auth_token');
+                  sessionStorage.removeItem('backend_auth_token');
+                  localStorage.removeItem('backend_refresh_token');
+                  sessionStorage.removeItem('backend_refresh_token');
+                  localStorage.removeItem('backend_token_expires_at');
+                  sessionStorage.removeItem('backend_token_expires_at');
                   localStorage.setItem('platform_explicitly_logged_out', 'true');
-                  navigate('/signin');
+                  sessionStorage.setItem('platform_explicitly_logged_out', 'true');
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('platform-logout'));
+                  }
+                  navigate('/login', { replace: true });
                 }}
                 className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer font-semibold"
               >

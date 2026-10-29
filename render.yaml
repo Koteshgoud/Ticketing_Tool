@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: ticketing-api
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: "sh -c \"if [ -d 'backend' ]; then cd backend; fi && pip install --upgrade pip && pip install -r requirements.txt\""
+    startCommand: "sh -c \"if [ -d 'backend' ]; then cd backend; fi && uvicorn app.main:app --host 0.0.0.0 --port $PORT\""
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        value: "https://hymajagarapu.github.io,https://sudheshnabharadwaj.github.io,http://localhost:3000,http://localhost:4173,http://localhost:4174,http://127.0.0.1:3000,http://127.0.0.1:4173,http://127.0.0.1:4174"
+      - key: SUPABASE_URL
+        value: "https://fidilgpihfwfnwiugoxm.supabase.co"
+      - key: SUPABASE_PROJECT_ID
+        value: "fidilgpihfwfnwiugoxm"
+      - key: SUPABASE_ANON_KEY
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpZGlsZ3BpaGZ3Zm53aXVnb3htIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4MzI0NDQsImV4cCI6MjEwNjQwODQ0NH0.LaQXHb314_mznb7ld3Abafou1HkbvjCAY8LU7GzH7b0"
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: "sb_publishable_lD7DIwNLPX251RYYtXdkZw_l54ozMws"

@@ -21,9 +21,7 @@ def configure_telemetry(
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
 
-    if debug or not otlp_endpoint:
-        provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
-    else:
+    if otlp_endpoint:
         exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
         provider.add_span_processor(BatchSpanProcessor(exporter))
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
-import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Ticket, Mail, Lock, ArrowRight, ShieldCheck, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { loginUser, getCurrentSessionUser } from '../../services/unifiedAuth';
@@ -24,6 +24,7 @@ export const LoginPage: React.FC = () => {
   const stateData = location.state as { registeredEmail?: string; registrationSuccess?: string } | null;
   const [email, setEmail] = useState(stateData?.registeredEmail || '');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; auth?: string }>({});
   const [successBanner, setSuccessBanner] = useState<string | null>(
     stateData?.registrationSuccess || null
@@ -36,7 +37,7 @@ export const LoginPage: React.FC = () => {
     setErrors({});
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: { email?: string; password?: string } = {};
 
@@ -56,9 +57,8 @@ export const LoginPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    setTimeout(async () => {
+    try {
       const result = await loginUser(email, password);
-      setIsSubmitting(false);
 
       if (!result.success || !result.user) {
         setErrors({ auth: result.error || 'Invalid credentials. Please verify your email and password.' });
@@ -67,13 +67,17 @@ export const LoginPage: React.FC = () => {
 
       // Dynamic routing to appropriate dashboard based on user role
       if (result.user.role === 'admin') {
-        navigate('/admin/dashboard');
+        navigate('/admin/dashboard', { replace: true });
       } else if (result.user.role === 'teamlead') {
-        navigate('/teamlead/dashboard');
+        navigate('/teamlead/dashboard', { replace: true });
       } else {
-        navigate('/employee/dashboard');
+        navigate('/employee/dashboard', { replace: true });
       }
-    }, 400);
+    } catch (err: any) {
+      setErrors({ auth: err?.message || 'Login failed. Please check your connection and try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -95,11 +99,6 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-              Workspace Sign In
-            </span>
-          </div>
         </div>
       </header>
 
@@ -157,7 +156,7 @@ export const LoginPage: React.FC = () => {
                 </Link>
               </div>
               <Input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => {
@@ -166,6 +165,18 @@ export const LoginPage: React.FC = () => {
                 }}
                 error={errors.password}
                 icon={<Lock className="w-4 h-4" />}
+                rightElement={
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-slate-400 hover:text-slate-600 focus:outline-none p-1 transition-colors cursor-pointer"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
               />
             </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Search, Ticket, Filter, RefreshCw, Eye } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import type { EmployeeTicket } from '../types';
@@ -11,27 +11,83 @@ import { Table, type Column } from '../components/ui/Table';
 
 export const MyTickets: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const paramStatus = searchParams.get('status');
+  const paramScope = searchParams.get('scope');
+  const paramSearch = searchParams.get('search') || searchParams.get('q') || '';
+
   const [tickets, setTickets] = useState<EmployeeTicket[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [searchTerm, setSearchTerm] = useState(paramSearch);
+  const [statusFilter, setStatusFilter] = useState<string>(paramStatus || 'ALL');
 
   const loadTickets = async () => {
     await EmployeeService.fetchTickets();
-    const list = EmployeeService.getMyTickets();
+    let list: EmployeeTicket[];
+    if (paramScope === 'my') {
+      list = EmployeeService.getMyTickets();
+    } else if (paramScope === 'assigned') {
+      list = EmployeeService.getAssignedTickets();
+    } else {
+      list = EmployeeService.getEmployeeTickets();
+    }
     setTickets(list);
   };
 
   useEffect(() => {
     loadTickets();
-  }, []);
+    const handleTicketUpdated = () => {
+      loadTickets();
+    };
+    window.addEventListener('ticket-updated', handleTicketUpdated);
+    window.addEventListener('storage', handleTicketUpdated);
+    return () => {
+      window.removeEventListener('ticket-updated', handleTicketUpdated);
+      window.removeEventListener('storage', handleTicketUpdated);
+    };
+  }, [paramScope]);
+
+  useEffect(() => {
+    if (paramStatus) {
+      setStatusFilter(paramStatus);
+    }
+  }, [paramStatus]);
+
+  useEffect(() => {
+    setSearchTerm(paramSearch);
+  }, [paramSearch]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    const nextParams = new URLSearchParams(location.search);
+    if (val.trim()) {
+      nextParams.set('search', val);
+    } else {
+      nextParams.delete('search');
+    }
+    navigate(`?${nextParams.toString()}`, { replace: true });
+  };
 
   const filteredTickets = tickets.filter((ticket) => {
+    const q = searchTerm.toLowerCase().trim();
     const matchesSearch =
-      ticket.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ticket.category.toLowerCase().includes(searchTerm.toLowerCase());
+      !q ||
+      String(ticket.ticketNumber || '').toLowerCase().includes(q) ||
+      String(ticket.id || '').toLowerCase().includes(q) ||
+      String(ticket.title || '').toLowerCase().includes(q) ||
+      String(ticket.description || '').toLowerCase().includes(q) ||
+      String(ticket.category || '').toLowerCase().includes(q) ||
+      String(ticket.department || '').toLowerCase().includes(q) ||
+      String(ticket.priority || '').toLowerCase().includes(q) ||
+      String(ticket.status || '').toLowerCase().includes(q) ||
+      String((ticket as any).employee || (ticket as any).requesterName || '').toLowerCase().includes(q) ||
+      String((ticket as any).assignedAgent || ticket.assignedTo || '').toLowerCase().includes(q);
 
-    const matchesStatus = statusFilter === 'ALL' || ticket.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'ALL' ||
+      ticket.status === statusFilter ||
+      (statusFilter === 'Pending' && ticket.status === 'Escalated') ||
+      (statusFilter === 'Resolved' && ticket.status === 'Closed');
 
     return matchesSearch && matchesStatus;
   });
@@ -40,9 +96,19 @@ export const MyTickets: React.FC = () => {
     {
       header: 'Ticket ID',
       accessorKey: 'ticketNumber',
-      cell: (row) => (
-        <span className="font-mono text-xs font-bold text-[#0284C7]">{row.ticketNumber}</span>
-      ),
+      cell: (row) => {
+        const targetPath = row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`;
+        return (
+          <button
+            type="button"
+            onClick={() => navigate(`${targetPath}?mode=view`)}
+            className="font-mono text-xs font-bold text-[#0284C7] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+            title="View Ticket (Read-only)"
+          >
+            {row.ticketNumber}
+          </button>
+        );
+      },
     },
     {
       header: 'Subject',
@@ -71,17 +137,23 @@ export const MyTickets: React.FC = () => {
     },
     {
       header: 'Action',
-      cell: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/tickets/${row.id}`)}
-          className="border-slate-200 hover:border-[#0284C7] hover:bg-sky-50 text-slate-600 hover:text-[#0284C7] text-xs font-medium"
-        >
-          <Eye className="w-3.5 h-3.5 mr-1" />
-          View Details
-        </Button>
-      ),
+      cell: (row) => {
+        const targetPath = row.assignedBy ? `/assigned-tickets/${row.id}` : `/tickets/${row.id}`;
+        return (
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`${targetPath}?mode=view`)}
+              className="border-slate-200 hover:border-[#0284C7] hover:bg-sky-50 text-slate-600 hover:text-[#0284C7] text-xs font-medium cursor-pointer"
+              title="Read-only View"
+            >
+              <Eye className="w-3.5 h-3.5 mr-1" />
+              View
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -127,9 +199,9 @@ export const MyTickets: React.FC = () => {
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="w-full md:w-80">
           <Input
-            placeholder="Search ticket ID, subject or category..."
+            placeholder="Search ticket ID, subject, requester, assignee..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             icon={<Search className="w-4 h-4 text-slate-400" />}
           />
         </div>
