@@ -38,23 +38,27 @@ export const TeamTickets: React.FC = () => {
 
   // Helper functions for filtering
   const isTicketUnassigned = (t: Ticket) =>
-    !t.assignedAgent ||
-    t.assignedAgent.trim() === '' ||
-    t.assignedAgent.toLowerCase() === 'unassigned' ||
-    t.assignedToType === 'unassigned';
+    t.status !== 'Resolved' &&
+    t.status !== 'Closed' &&
+    (!t.assignedAgent ||
+      t.assignedAgent.trim() === '' ||
+      t.assignedAgent.toLowerCase() === 'unassigned');
 
   const isTicketSLARisk = (t: Ticket) => {
+    const st = (t.status || '').toLowerCase();
+    if (st === 'resolved' || st === 'closed' || st === 'escalated') return false;
     const s = (t.slaStatus || '').toLowerCase();
-    return s.includes('risk') || s.includes('breach') || s.includes('approach');
+    return s === 'at risk' || s === 'sla risk' || s.includes('risk');
   };
 
-  // Synchronize URL query parameters (?filter=, ?status=, ?sla=)
+  // Synchronize URL query parameters (?filter=, ?status=, ?sla=, ?search=)
   useEffect(() => {
-    let filterParam = searchParams.get('filter')?.toLowerCase();
-    let statusParam = searchParams.get('status')?.toLowerCase();
-    let slaParam = searchParams.get('sla')?.toLowerCase();
+    let filterParam: string | null | undefined = searchParams.get('filter')?.toLowerCase();
+    let statusParam: string | null | undefined = searchParams.get('status')?.toLowerCase();
+    let slaParam: string | null | undefined = searchParams.get('sla')?.toLowerCase();
+    let searchParam: string | null | undefined = searchParams.get('search') || searchParams.get('q') || undefined;
 
-    if (!filterParam && !statusParam && !slaParam && typeof window !== 'undefined') {
+    if (!filterParam && !statusParam && !slaParam && !searchParam && typeof window !== 'undefined') {
       const fullHash = window.location.hash || '';
       const queryPart = fullHash.includes('?') ? fullHash.split('?')[1] : window.location.search;
       if (queryPart) {
@@ -62,7 +66,12 @@ export const TeamTickets: React.FC = () => {
         filterParam = urlParams.get('filter')?.toLowerCase() || undefined;
         statusParam = urlParams.get('status')?.toLowerCase() || undefined;
         slaParam = urlParams.get('sla')?.toLowerCase() || undefined;
+        searchParam = urlParams.get('search') || urlParams.get('q') || undefined;
       }
+    }
+
+    if (searchParam !== null && searchParam !== undefined) {
+      setSearchQuery(searchParam);
     }
 
     if (filterParam) {
@@ -91,6 +100,28 @@ export const TeamTickets: React.FC = () => {
       setActiveTab('SLA Risk');
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (outletContext?.globalSearch !== undefined && outletContext.globalSearch !== searchQuery) {
+      setSearchQuery(outletContext.globalSearch);
+    }
+  }, [outletContext?.globalSearch]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    setCurrentPage(1);
+    const nextParams = new URLSearchParams(searchParams);
+    if (val.trim()) {
+      nextParams.set('search', val);
+    } else {
+      nextParams.delete('search');
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, priorityFilter, categoryFilter, agentFilter, slaFilter, activeTab]);
 
   // Dynamic count badges per tab
   const getTabCount = (tab: string) => {
@@ -129,14 +160,20 @@ export const TeamTickets: React.FC = () => {
     // SLA Filter
     if (slaFilter !== 'All' && ticket.slaStatus !== slaFilter) return false;
 
-    // Search Query (ID, Subject, Employee, Agent)
+    // Search Query (ID, Ticket Number, Subject, Description, Department, Category, Employee, Agent, Priority)
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchId = ticket.id.toLowerCase().includes(q);
-      const matchSubject = ticket.subject.toLowerCase().includes(q);
-      const matchEmployee = ticket.employee.toLowerCase().includes(q);
-      const matchAgent = ticket.assignedAgent.toLowerCase().includes(q);
-      if (!matchId && !matchSubject && !matchEmployee && !matchAgent) return false;
+      const q = searchQuery.toLowerCase().trim();
+      const matchId = String(ticket.id || '').toLowerCase().includes(q);
+      const matchNumber = String((ticket as any).ticketNumber || (ticket as any).ticket_number || '').toLowerCase().includes(q);
+      const matchSubject = String(ticket.subject || '').toLowerCase().includes(q);
+      const matchDesc = String(ticket.description || '').toLowerCase().includes(q);
+      const matchDept = String(ticket.department || '').toLowerCase().includes(q);
+      const matchCat = String(ticket.category || '').toLowerCase().includes(q);
+      const matchEmployee = String(ticket.employee || '').toLowerCase().includes(q);
+      const matchAgent = String(ticket.assignedAgent || '').toLowerCase().includes(q);
+      const matchPriority = String(ticket.priority || '').toLowerCase().includes(q);
+      const matchStatus = String(ticket.status || '').toLowerCase().includes(q);
+      if (!matchId && !matchNumber && !matchSubject && !matchDesc && !matchDept && !matchCat && !matchEmployee && !matchAgent && !matchPriority && !matchStatus) return false;
     }
 
     return true;
@@ -225,10 +262,7 @@ export const TeamTickets: React.FC = () => {
       <div className="space-y-3">
         <SearchBar
           value={searchQuery}
-          onChange={(val) => {
-            setSearchQuery(val);
-            setCurrentPage(1);
-          }}
+          onChange={handleSearchChange}
           placeholder="Search by Ticket ID (e.g. TKT-1001), Subject, Employee, or Agent..."
         />
 

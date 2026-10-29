@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, ShieldCheck, Building2, Camera, Upload, Edit3, Save, X, Mail, Phone, Lock, CheckCircle2, AlertCircle, Key } from 'lucide-react';
+import { User, ShieldCheck, Building2, Camera, Upload, Edit3, Save, X, Mail, Phone, CheckCircle2, AlertCircle, Key, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
-import { supabase } from '../services/supabaseClient';
+import { apiRequest, apiRequestSafe } from '../services/backendAuth';
 import { getCurrentSessionUser, setSessionUser } from '../services/unifiedAuth';
 
 export interface AdminProfileData {
@@ -16,16 +16,6 @@ export interface AdminProfileData {
 }
 
 export function getAdminProfile(): AdminProfileData {
-  const cached = localStorage.getItem('admin_profile_data');
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      if (parsed?.name && !parsed.name.toLowerCase().includes('hyma') && !parsed.email?.toLowerCase().includes('hyma')) {
-        return parsed;
-      }
-    } catch {}
-  }
-
   const session = getCurrentSessionUser();
   if (session && session.name) {
     const roleTitle = session.role === 'admin'
@@ -37,27 +27,31 @@ export function getAdminProfile(): AdminProfileData {
       name: session.name,
       email: session.email,
       role: roleTitle,
-      department: session.department || 'IT Operations',
-      phone: session.phone || '+1 (555) 019-2834',
-      avatarUrl: session.avatarUrl || localStorage.getItem('admin_profile_avatar') || '',
+      department: session.department || '',
+      phone: session.phone || '',
+      avatarUrl: session.avatarUrl || '',
     };
   }
 
+  // No cached/hardcoded identity: the page loads the real profile from the API.
   return {
-    name: 'Sudheshna Bharadwaj',
-    email: 'sudheshna@gmail.com',
-    role: 'System Administrator',
-    department: 'IT Operations',
-    phone: '+1 (555) 019-2834',
-    avatarUrl: localStorage.getItem('admin_profile_avatar') || '',
+    name: '',
+    email: '',
+    role: '',
+    department: '',
+    phone: '',
+    avatarUrl: '',
   };
 }
 
 export function saveAdminProfile(data: AdminProfileData) {
+  sessionStorage.setItem('admin_profile_data', JSON.stringify(data));
   localStorage.setItem('admin_profile_data', JSON.stringify(data));
   if (data.avatarUrl) {
+    sessionStorage.setItem('admin_profile_avatar', data.avatarUrl);
     localStorage.setItem('admin_profile_avatar', data.avatarUrl);
   } else {
+    sessionStorage.removeItem('admin_profile_avatar');
     localStorage.removeItem('admin_profile_avatar');
   }
   window.dispatchEvent(new Event('storage'));
@@ -75,7 +69,13 @@ export const ProfilePage: React.FC = () => {
   const [editPhone, setEditPhone] = useState(profile.phone);
   const [editAvatarUrl, setEditAvatarUrl] = useState(profile.avatarUrl || '');
 
+  // Validation & feedback state
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentSession = getCurrentSessionUser();
+  const [userId, setUserId] = useState<string>(currentSession?.id || '');
 
   useEffect(() => {
     // Purge legacy hyma data if present
@@ -96,44 +96,60 @@ export const ProfilePage: React.FC = () => {
     setEditPhone(initial.phone);
     setEditAvatarUrl(initial.avatarUrl || '');
 
-    // Fetch live user from Supabase to keep in sync
+    // Load the authoritative profile from the backend (scoped to the token).
     const fetchLiveUser = async () => {
+      const result = await apiRequestSafe<any>('/users/profile');
+      if (result.error || !result.data) {
+        console.warn('Profile fetch warning:', result.error);
+        return;
+      }
+      const dbUser = result.data;
+      const liveProfile: AdminProfileData = {
+        name: dbUser.name || initial.name,
+        email: dbUser.email || initial.email,
+        role:
+          dbUser.designation ||
+          (dbUser.role === 'admin'
+            ? 'System Administrator'
+            : dbUser.role === 'teamlead'
+            ? 'Team Lead'
+            : 'Employee'),
+        department: dbUser.department || initial.department,
+        phone: dbUser.phone || '',
+        avatarUrl: dbUser.avatar || '',
+      };
+      if (dbUser.id) setUserId(dbUser.id);
+      setProfile(liveProfile);
+      setEditName(liveProfile.name);
+      setEditEmail(liveProfile.email);
+      setEditRole(liveProfile.role);
+      setEditDepartment(liveProfile.department);
+      setEditPhone(liveProfile.phone);
+      setEditAvatarUrl(liveProfile.avatarUrl || '');
+      saveAdminProfile(liveProfile);
       const session = getCurrentSessionUser();
-      const targetEmail = session?.email || initial.email;
-      if (!targetEmail) return;
-
-      try {
-        const { data: dbUser } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', targetEmail.trim().toLowerCase())
-          .maybeSingle();
-
-        if (dbUser) {
-          const liveProfile: AdminProfileData = {
-            name: dbUser.name || initial.name,
-            email: dbUser.email || initial.email,
-            role: dbUser.designation || (dbUser.role === 'admin' ? 'System Administrator' : dbUser.role === 'teamlead' ? 'Team Lead' : 'Employee'),
-            department: dbUser.department || initial.department,
-            phone: dbUser.phone || initial.phone,
-            avatarUrl: dbUser.avatar || initial.avatarUrl || '',
-          };
-          setProfile(liveProfile);
-          setEditName(liveProfile.name);
-          setEditEmail(liveProfile.email);
-          setEditRole(liveProfile.role);
-          setEditDepartment(liveProfile.department);
-          setEditPhone(liveProfile.phone);
-          setEditAvatarUrl(liveProfile.avatarUrl || '');
-          saveAdminProfile(liveProfile);
-        }
-      } catch (err) {
-        console.warn('Supabase profile fetch warning:', err);
+      if (session) {
+        setSessionUser({
+          ...session,
+          id: dbUser.id || session.id,
+          name: liveProfile.name,
+          email: liveProfile.email,
+          department: liveProfile.department,
+          phone: liveProfile.phone,
+          avatarUrl: liveProfile.avatarUrl,
+        });
       }
     };
 
     fetchLiveUser();
   }, []);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const startEditing = () => {
     setEditName(profile.name);
@@ -142,137 +158,150 @@ export const ProfilePage: React.FC = () => {
     setEditDepartment(profile.department);
     setEditPhone(profile.phone);
     setEditAvatarUrl(profile.avatarUrl || '');
+    setValidationError(null);
     setIsEditing(true);
   };
 
   const cancelEditing = () => {
+    setValidationError(null);
     setIsEditing(false);
   };
 
-  // Password Change State
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isChangingPwd, setIsChangingPwd] = useState(false);
+  const handleRemovePhoto = async () => {
+    setEditAvatarUrl('');
+    const updated: AdminProfileData = {
+      ...profile,
+      avatarUrl: '',
+    };
 
-  const currentSession = getCurrentSessionUser();
-  const [userId, setUserId] = useState<string>(currentSession?.id || 'usr-admin-1791538577749');
+    try {
+      // Clears only the avatar column for this authenticated user.
+      await apiRequest('/users/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar: '' }),
+      });
+      saveAdminProfile(updated);
+      setProfile(updated);
+
+      const activeSession = getCurrentSessionUser();
+      if (activeSession) {
+        setSessionUser({ ...activeSession, avatarUrl: '' });
+      }
+      setToastMessage('Profile photo removed. Your account is unchanged.');
+    } catch (err) {
+      console.warn('Failed to clear avatar:', err);
+      setValidationError(
+        err instanceof Error ? err.message : 'Could not remove the profile photo. Please try again.'
+      );
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updated: AdminProfileData = {
-      name: editName.trim() || profile.name,
-      email: editEmail.trim() || profile.email,
-      role: editRole.trim() || profile.role,
-      department: editDepartment.trim() || profile.department,
-      phone: editPhone.trim() || profile.phone,
-      avatarUrl: editAvatarUrl,
-    };
-    saveAdminProfile(updated);
-    setProfile(updated);
-    setIsEditing(false);
+    setValidationError(null);
 
-    // Update current session user in localStorage
-    const activeSession = getCurrentSessionUser();
-    const targetId = activeSession?.id || userId || 'usr-admin-1791538577749';
+    // 1. Strict RFC Email Validation (email is read-only on this form)
+    const cleanEmail = editEmail.trim();
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setValidationError('Please enter a valid email address (e.g., name@oklut.com).');
+      return;
+    }
 
-    setSessionUser({
-      ...(activeSession || {}),
-      id: targetId,
-      name: updated.name,
-      email: updated.email,
-      phone: updated.phone,
-      department: updated.department,
-      avatarUrl: updated.avatarUrl,
-      role: 'admin',
-      status: activeSession?.status || 'Active',
-    });
+    // 2. Strict 10-Digit Mobile Number Validation
+    const cleanDigits = editPhone.replace(/\D/g, '');
+    if (cleanDigits.length !== 10) {
+      setValidationError('Contact number must be exactly 10 digits (e.g., 9876543210).');
+      return;
+    }
 
-    localStorage.setItem('platform_current_user', JSON.stringify({
-      id: targetId,
-      name: updated.name,
-      email: updated.email,
-      phone: updated.phone,
-      department: updated.department,
-      avatarUrl: updated.avatarUrl,
-      role: 'admin',
-      status: activeSession?.status || 'Active',
-    }));
-
-    window.dispatchEvent(new Event('storage'));
-
-    // Sync profile changes to Supabase public.users
     try {
-      await supabase
-        .from('users')
-        .update({
-          name: updated.name,
-          email: updated.email,
-          phone: updated.phone,
-          department: updated.department,
-          avatar: updated.avatarUrl || null,
-          designation: updated.role,
-          updated_at: new Date().toISOString()
-        })
-        .or(`id.eq.${targetId},email.eq.${profile.email},email.eq.${updated.email}`);
+      const saved = await apiRequest<any>('/users/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName.trim() || profile.name,
+          phone: cleanDigits,
+          designation: editRole.trim() || profile.role,
+          department: editDepartment.trim() || profile.department,
+          avatar: editAvatarUrl || undefined,
+        }),
+      });
+
+      const updated: AdminProfileData = {
+        name: saved.name || editName.trim() || profile.name,
+        email: saved.email || cleanEmail,
+        role: saved.designation || editRole.trim() || profile.role,
+        department: saved.department || editDepartment.trim() || profile.department,
+        phone: saved.phone || cleanDigits,
+        avatarUrl: saved.avatar ?? editAvatarUrl,
+      };
+
+      saveAdminProfile(updated);
+      setProfile(updated);
+      setEditAvatarUrl(updated.avatarUrl || '');
+      setIsEditing(false);
+
+      const activeSession = getCurrentSessionUser();
+      setSessionUser({
+        id: saved.id || activeSession?.id || userId,
+        name: updated.name,
+        email: updated.email,
+        phone: updated.phone,
+        department: updated.department,
+        avatarUrl: updated.avatarUrl,
+        role: activeSession?.role || 'admin',
+        status: activeSession?.status || 'Active',
+        createdAt: activeSession?.createdAt,
+      });
+
+      window.dispatchEvent(new Event('storage'));
+      setToastMessage('Profile details successfully updated.');
     } catch (err) {
-      console.warn('Supabase profile sync warning:', err);
-    }
-  };
-
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPwdMsg(null);
-
-    if (!newPassword || newPassword.length < 8) {
-      setPwdMsg({ type: 'error', text: 'New password must be at least 8 characters long.' });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPwdMsg({ type: 'error', text: 'New password and confirmation do not match.' });
-      return;
-    }
-
-    setIsChangingPwd(true);
-    try {
-      // 1. Update in Supabase Auth
-      await supabase.auth.updateUser({ password: newPassword });
-
-      // 2. Update in PostgreSQL public.users
-      await supabase
-        .from('users')
-        .update({ password: newPassword, updated_at: new Date().toISOString() })
-        .eq('email', profile.email);
-
-      setPwdMsg({ type: 'success', text: 'Password successfully updated in your account and Supabase Auth.' });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err: any) {
-      setPwdMsg({ type: 'error', text: err?.message || 'Failed to update password.' });
-    } finally {
-      setIsChangingPwd(false);
+      setValidationError(
+        err instanceof Error ? err.message : 'Could not save your profile. Please try again.'
+      );
     }
   };
 
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        if (isEditing) {
-          setEditAvatarUrl(result);
-        } else {
-          const updated = { ...profile, avatarUrl: result };
-          saveAdminProfile(updated);
-          setProfile(updated);
-          setEditAvatarUrl(result);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setValidationError('Please choose an image file for your profile photo.');
+      return;
     }
+    if (file.size > 2 * 1024 * 1024) {
+      setValidationError('Profile photos must be 2 MB or smaller.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const result = reader.result as string;
+      setEditAvatarUrl(result);
+      if (isEditing) return;
+
+      // Persist the photo immediately for the authenticated user.
+      try {
+        await apiRequest('/users/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ avatar: result }),
+        });
+        const updated = { ...profile, avatarUrl: result };
+        saveAdminProfile(updated);
+        setProfile(updated);
+        const session = getCurrentSessionUser();
+        if (session) setSessionUser({ ...session, avatarUrl: result });
+        setToastMessage('Profile photo updated.');
+      } catch (err) {
+        setValidationError(
+          err instanceof Error ? err.message : 'Could not save the profile photo.'
+        );
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const displayAvatar = isEditing ? editAvatarUrl : profile.avatarUrl;
@@ -287,6 +316,38 @@ export const ProfilePage: React.FC = () => {
         onChange={handleImageFileChange}
         className="hidden"
       />
+
+      {/* Toast Feedback */}
+      {toastMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center justify-between text-xs font-semibold shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="text-emerald-600 hover:text-emerald-900 font-bold ml-4 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Validation Error Banner */}
+      {validationError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-xl flex items-center justify-between text-xs font-semibold shadow-xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{validationError}</span>
+          </div>
+          <button
+            onClick={() => setValidationError(null)}
+            className="text-rose-600 hover:text-rose-900 font-bold ml-4 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Page Header */}
       <div className="flex items-center justify-between">
@@ -378,15 +439,28 @@ export const ProfilePage: React.FC = () => {
             </div>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
-          >
-            <Upload className="w-3.5 h-3.5 mr-1.5 text-[#0284C7]" />
-            Upload Photo from Computer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
+            >
+              <Upload className="w-3.5 h-3.5 mr-1.5 text-[#0284C7]" />
+              Upload Photo
+            </Button>
+            {displayAvatar && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRemovePhoto}
+                className="border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5 text-rose-500" />
+                Remove Photo
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Profile Attributes / Edit Form */}
@@ -432,7 +506,7 @@ export const ProfilePage: React.FC = () => {
                   required
                   value={editEmail}
                   onChange={(e) => setEditEmail(e.target.value)}
-                  placeholder="Enter email address"
+                  placeholder="Enter email address (e.g. name@oklut.com)"
                 />
               ) : (
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-900">
@@ -483,14 +557,15 @@ export const ProfilePage: React.FC = () => {
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-slate-400" /> Contact Number
+                <Phone className="w-3.5 h-3.5 text-slate-400" /> Contact Number (10-digit mobile) <span className="text-red-500">*</span>
               </label>
               {isEditing ? (
                 <Input
                   type="tel"
+                  maxLength={10}
                   value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  placeholder="Enter contact number"
+                  onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Enter 10-digit mobile number (e.g. 9876543210)"
                 />
               ) : (
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-900">
@@ -519,75 +594,6 @@ export const ProfilePage: React.FC = () => {
               </Button>
             </div>
           )}
-        </form>
-      </div>
-
-      {/* Security & Password Change Section */}
-      <div className="max-w-3xl bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-5">
-        <div className="border-b border-slate-100 pb-4">
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <Lock className="w-4 h-4 text-[#0284C7]" /> Security & Password Management
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Update your account password securely. Changes will take effect immediately across all sessions and Supabase Auth.
-          </p>
-        </div>
-
-        {pwdMsg && (
-          <div className={`p-3 rounded-xl border flex items-center gap-2 text-xs font-medium ${
-            pwdMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
-          }`}>
-            {pwdMsg.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-            )}
-            {pwdMsg.text}
-          </div>
-        )}
-
-        <form onSubmit={handlePasswordChange} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-slate-400" /> New Password <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="At least 8 characters"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-slate-400" /> Confirm New Password <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="Re-enter new password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-[11px] text-slate-400">
-              Must contain minimum 8 characters with letters and numbers.
-            </span>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={isChangingPwd}
-              className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold text-xs py-2 px-4 shadow-2xs"
-            >
-              {isChangingPwd ? 'Updating Password...' : 'Update Password'}
-            </Button>
-          </div>
         </form>
       </div>
     </div>

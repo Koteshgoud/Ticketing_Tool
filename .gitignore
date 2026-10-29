@@ -55,9 +55,16 @@ repomix-output.xml
 sync_*.cjs
 sync_*.py
 test_*.py
+!backend/tests/**
+backend/tests/**/__pycache__/
 test_*.js
 test_*.cjs
 verify_*.cjs
 list_users.py
 scripts/
+scratch/
+**/scratch/
+uploads/
+**/uploads/
 ticketing-system-frontend/platform
+

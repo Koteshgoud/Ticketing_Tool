@@ -1,9 +1,10 @@
 """API endpoints for auth, invitation verification, ticket assignment notifications and SMTP diagnostics."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
+from app.auth.dependencies import require_role
 from app.config import get_settings
 from app.services.email_service import (
     format_user_invitation_email,
@@ -87,7 +88,7 @@ async def send_forgot_password_email(payload: ForgotPasswordNotificationRequest)
     }
 
 
-@router.get("/smtp-status")
+@router.get("/smtp-status", dependencies=[Depends(require_role("admin"))])
 async def get_smtp_status():
     """Return whether SMTP is configured and whether password credentials are set."""
     settings = get_settings()
@@ -112,7 +113,7 @@ async def get_smtp_status():
     }
 
 
-@router.post("/send-invite")
+@router.post("/send-invite", dependencies=[Depends(require_role("admin", "teamlead"))])
 async def send_user_invitation(payload: UserInvitationRequest):
     """Send account verification & onboarding invitation email to a newly added user."""
     role_norm = (payload.role or "employee").lower().replace(" ", "")
@@ -165,7 +166,7 @@ async def send_user_invitation(payload: UserInvitationRequest):
     }
 
 
-@router.post("/ticket-assigned")
+@router.post("/ticket-assigned", dependencies=[Depends(require_role("admin", "teamlead"))])
 async def send_ticket_assignment_notification(payload: TicketAssignmentRequest):
     """Send email notification to an agent/employee when a ticket is assigned to them."""
     ticket_url = payload.ticket_url or f"http://localhost:3000/admin/workspace/tickets/{payload.ticket_id}"
@@ -198,7 +199,7 @@ async def send_ticket_assignment_notification(payload: TicketAssignmentRequest):
     }
 
 
-@router.post("/teamlead-welcome")
+@router.post("/teamlead-welcome", dependencies=[Depends(require_role("admin"))])
 async def send_teamlead_welcome(payload: TeamLeadWelcomeRequest):
     """Send welcome and credential notification email to newly created Team Lead."""
     email_data = format_teamlead_welcome_email(
@@ -233,7 +234,7 @@ async def send_teamlead_welcome(payload: TeamLeadWelcomeRequest):
     }
 
 
-@router.post("/smtp-test")
+@router.post("/smtp-test", dependencies=[Depends(require_role("admin"))])
 async def send_smtp_test(payload: SMTPTestRequest):
     """Trigger a test email to verify live SMTP delivery."""
     subject = "Ticketing Platform - SMTP Connectivity Test"
@@ -264,7 +265,7 @@ class SMTPConfigRequest(BaseModel):
     smtp_tls: Optional[bool] = None
 
 
-@router.post("/smtp-config")
+@router.post("/smtp-config", dependencies=[Depends(require_role("admin"))])
 async def update_smtp_config(payload: SMTPConfigRequest):
     """Update and persist SMTP configuration to backend settings and .env files."""
     from pathlib import Path

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Mail, Shield, Building, Phone, BadgeCheck, Camera, Upload, Edit3, Save, X } from 'lucide-react';
+import { User, Mail, Shield, Building, Phone, BadgeCheck, Camera, Upload, Edit3, Save, X, Trash2, CheckCircle2 } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import type { EmployeeProfile } from '../types';
 import { Button } from '../components/ui/Button';
@@ -17,6 +17,8 @@ export const Profile: React.FC = () => {
   const [editRole, setEditRole] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,6 +31,18 @@ export const Profile: React.FC = () => {
     setEditRole(p.role);
     setEditPhone(p.phone);
     setEditAvatarUrl(p.avatarUrl || '');
+
+    EmployeeService.fetchProfile().then((fresh) => {
+      if (fresh) {
+        setProfile(fresh);
+        setEditName(fresh.name);
+        setEditEmail(fresh.email);
+        setEditDepartment(fresh.department);
+        setEditRole(fresh.role);
+        setEditPhone(fresh.phone);
+        setEditAvatarUrl(fresh.avatarUrl || '');
+      }
+    }).catch(() => {});
   }, []);
 
   if (!profile) return null;
@@ -47,9 +61,16 @@ export const Profile: React.FC = () => {
     setIsEditing(false);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updated = EmployeeService.updateProfile({
+    setPhoneError(null);
+
+    if (editPhone.trim() && !/^\d{10}$/.test(editPhone.trim())) {
+      setPhoneError('Mobile number must be exactly 10 digits.');
+      return;
+    }
+
+    const updated = await EmployeeService.updateProfile({
       name: editName.trim() || profile.name,
       email: editEmail.trim() || profile.email,
       department: editDepartment.trim() || profile.department,
@@ -59,7 +80,24 @@ export const Profile: React.FC = () => {
     });
     setProfile(updated);
     setIsEditing(false);
+    setSuccessMsg('Profile updated successfully.');
+    setTimeout(() => setSuccessMsg(null), 3000);
     // Notify top nav and other listeners
+    window.dispatchEvent(new Event('storage'));
+  };
+
+  const handleRemovePhoto = async () => {
+    if (isEditing) {
+      setEditAvatarUrl('');
+    }
+    const updated = await EmployeeService.updateProfile({ avatarUrl: '' });
+    setProfile(updated);
+    setEditAvatarUrl('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setSuccessMsg('Profile photo removed.');
+    setTimeout(() => setSuccessMsg(null), 3000);
     window.dispatchEvent(new Event('storage'));
   };
 
@@ -67,12 +105,12 @@ export const Profile: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const result = reader.result as string;
         if (isEditing) {
           setEditAvatarUrl(result);
         } else {
-          const updated = EmployeeService.updateProfile({ avatarUrl: result });
+          const updated = await EmployeeService.updateProfile({ avatarUrl: result });
           setProfile(updated);
           setEditAvatarUrl(result);
         }
@@ -94,6 +132,19 @@ export const Profile: React.FC = () => {
         onChange={handleImageFileChange}
         className="hidden"
       />
+
+      {/* Feedback Banners */}
+      {successMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200 shadow-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+      {phoneError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200 shadow-xs">
+          <span>{phoneError}</span>
+        </div>
+      )}
 
       {/* Clean Profile Header Card */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
@@ -144,8 +195,17 @@ export const Profile: React.FC = () => {
                 onClick={() => fileInputRef.current?.click()}
                 className="text-xs font-bold text-[#0284C7] hover:underline cursor-pointer flex items-center gap-1"
               >
-                <Upload className="w-3.5 h-3.5" /> Upload Photo from Computer
+                <Upload className="w-3.5 h-3.5" /> Upload Photo
               </button>
+              {displayAvatar && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Remove Photo
+                </button>
+              )}
             </div>
           </div>
         </div>

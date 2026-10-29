@@ -2,7 +2,7 @@ export type UserRole = 'Admin' | 'Team Lead' | 'Employee' | '';
 
 export type UserDepartment = 'IT Support' | 'HR' | 'Finance' | 'Operations' | 'Sales' | 'Marketing' | 'Legal' | 'Facilities' | '';
 
-export type UserStatus = 'Active' | 'Inactive' | 'Pending Invitation';
+export type UserStatus = 'Active' | 'Inactive' | 'Pending Invitation' | 'Invite Expired' | 'Invite Failed';
 
 export interface User {
   id: string;
@@ -52,6 +52,7 @@ export interface Ticket {
   updatedAt?: string;
   dueDate: string;
   attachments?: string[];
+  attachmentsError?: string | null;
   teamLeads?: { id: string; name: string; role: string; employeeId: string; email: string }[];
   employees?: { id: string; name: string; role: string; employeeId: string; email: string }[];
   history?: TicketHistoryItem[];
@@ -61,10 +62,14 @@ export interface DashboardStats {
   totalTickets: number;
   totalUsers: number;
   openTickets: number;
+  inProgressTickets: number;
+  pendingTickets: number;
   escalatedTickets: number;
   slaRiskCount: number;
   slaBreachedCount: number;
+  resolvedTickets: number;
   resolvedTodayCount: number;
+  unassignedTickets?: number;
 }
 
 export interface AddUserFormData {

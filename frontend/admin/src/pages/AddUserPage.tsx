@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
@@ -8,7 +8,7 @@ import { Badge } from '../components/ui/Badge';
 import { PasswordStrengthValidator, validatePassword } from '../components/ui/PasswordStrengthValidator';
 import type { UserRole, UserDepartment } from '../types';
 import { AdminApiService } from '../services/api';
-import { OrganizationService } from '../services/organizationService';
+import { apiRequestSafe } from '../services/backendAuth';
 import {
   UserPlus,
   Mail,
@@ -16,13 +16,11 @@ import {
   Key,
   Copy,
   Check,
-  Share2,
-  Send,
   UserCheck,
   ArrowLeft,
   Info,
-  Building2,
-  BadgeCheck
+  BadgeCheck,
+  Building2
 } from 'lucide-react';
 
 export const AddUserPage: React.FC = () => {
@@ -39,15 +37,14 @@ export const AddUserPage: React.FC = () => {
     password: '',
     confirmPassword: '',
     userDetails: '',
-    sendEmailInvite: true
   });
 
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [shareableLink, setShareableLink] = useState('');
-  const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCreds, setCopiedCreds] = useState(false);
+  const [teamLeadsFromDb, setTeamLeadsFromDb] = useState<{ id: string; name: string; department: string; email: string }[]>([]);
+
   const [createdUserSummary, setCreatedUserSummary] = useState<{
     employeeId: string;
     name: string;
@@ -56,10 +53,28 @@ export const AddUserPage: React.FC = () => {
     role: string;
     department: string;
     loginUrl: string;
-    inviteToken?: string;
-    shareableLink?: string;
-    emailNotification?: any;
   } | null>(null);
+
+  // Fetch actual Team Leads from the authenticated backend directory
+  useEffect(() => {
+    const fetchTeamLeads = async () => {
+      const result = await apiRequestSafe<any[]>('/users/directory?role=teamlead');
+      if (result.error || !Array.isArray(result.data)) {
+        console.warn('Error fetching team leads:', result.error);
+        return;
+      }
+      setTeamLeadsFromDb(
+        result.data.map((u) => ({
+          id: u.id,
+          name: u.name || (u.email || '').split('@')[0],
+          department: u.department || 'IT Support',
+          email: u.email || '',
+        }))
+      );
+    };
+
+    fetchTeamLeads();
+  }, []);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -69,24 +84,24 @@ export const AddUserPage: React.FC = () => {
     }
 
     if (!formData.employeeId.trim()) {
-      newErrors.employeeId = 'Employee ID is required';
-    } else {
-      const cleanEmpId = formData.employeeId.trim().toUpperCase();
-      if (OrganizationService.isEmployeeIdTaken(cleanEmpId)) {
-        newErrors.employeeId = 'Employee ID already exists.';
-      }
+      newErrors.employeeId = 'Employee ID is required (e.g. OKL101)';
     }
 
-    if (!formData.email.trim()) {
+    // Strict RFC Email Validation
+    const cleanEmail = formData.email.trim();
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!cleanEmail) {
       newErrors.email = 'Email address is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Invalid email address format (e.g. name@company.com)';
+    } else if (!emailRegex.test(cleanEmail)) {
+      newErrors.email = 'Please enter a valid email address (e.g. name@oklut.com)';
     }
 
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Phone number is required';
-    } else if (!/^[+]*[(]{0,1}[0-9]{1,4}[)]{0,1}[-\s./0-9]*$/.test(formData.phone)) {
-      newErrors.phone = 'Invalid phone number format';
+    // Strict 10-Digit Mobile Number Validation
+    const cleanDigits = formData.phone.replace(/\D/g, '');
+    if (!cleanDigits) {
+      newErrors.phone = 'Contact number is required';
+    } else if (cleanDigits.length !== 10) {
+      newErrors.phone = 'Mobile number must be exactly 10 digits (e.g. 9876543210)';
     }
 
     if (!formData.department) {
@@ -101,19 +116,17 @@ export const AddUserPage: React.FC = () => {
       newErrors.teamLead = 'Team Lead selection is required';
     }
 
-    if (!formData.sendEmailInvite || formData.password) {
-      if (!formData.password) {
-        newErrors.password = 'Password is required when not sending auto-invite';
-      } else {
-        const pwdRes = validatePassword(formData.password);
-        if (!pwdRes.isValid) {
-          newErrors.password = 'Password does not meet all security requirements';
-        }
+    if (!formData.password) {
+      newErrors.password = 'Initial password is required';
+    } else {
+      const pwdRes = validatePassword(formData.password);
+      if (!pwdRes.isValid) {
+        newErrors.password = 'Password does not meet all security requirements';
       }
+    }
 
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = 'Password and Confirm Password do not match';
-      }
+    if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'Password and Confirm Password do not match';
     }
 
     setErrors(newErrors);
@@ -122,87 +135,52 @@ export const AddUserPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (!validate() || isSubmitting) return;
 
     setIsSubmitting(true);
-    const finalDepartment = formData.department === 'Others' ? formData.customDepartment : formData.department;
+    const finalDepartment = formData.department === 'Others' ? formData.customDepartment.trim() : formData.department;
     const cleanEmpId = formData.employeeId.trim().toUpperCase();
+    const cleanDigits = formData.phone.replace(/\D/g, '');
 
     try {
-      const addedUser = await AdminApiService.addUser({
+      await AdminApiService.addUser({
         name: formData.name.trim(),
         employeeId: cleanEmpId,
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
+        email: formData.email.trim().toLowerCase(),
+        phone: cleanDigits,
         department: finalDepartment as UserDepartment,
         role: formData.role as UserRole,
         teamLead: formData.role === 'Employee' ? formData.teamLead : undefined,
         password: formData.password,
         userDetails: formData.userDetails,
-        sendEmailInvite: formData.sendEmailInvite
+        sendEmailInvite: false // Direct addition, no invitation step
       });
 
-      // Synchronize with OrganizationService layer
-      if (formData.role === 'Team Lead') {
-        OrganizationService.addTeamLead({
-          id: cleanEmpId,
-          employeeId: cleanEmpId,
-          name: formData.name.trim(),
-          role: `${finalDepartment} Team Lead`,
-          departmentId: 'D-NEW',
-          departmentName: finalDepartment,
-          email: formData.email.trim()
-        });
-      } else if (formData.role === 'Employee') {
-        OrganizationService.addEmployee({
-          id: cleanEmpId,
-          employeeId: cleanEmpId,
-          name: formData.name.trim(),
-          role: 'Team Member',
-          teamLeadId: formData.teamLead,
-          departmentId: 'D-NEW',
-          departmentName: finalDepartment,
-          email: formData.email.trim()
-        });
-      }
+      const targetLoginUrl = formData.role === 'Team Lead' 
+        ? 'http://localhost:4174/login' 
+        : formData.role === 'Admin'
+        ? 'http://localhost:3000/login'
+        : 'http://localhost:4173/signin';
 
-      const tokenUsed = (addedUser as any).inviteToken || '';
-      const mappedRole = formData.role === 'Team Lead' ? 'teamlead' : formData.role === 'Admin' ? 'admin' : 'employee';
-      const targetLoginUrl = formData.role === 'Team Lead' ? 'http://localhost:4174/login' : 'http://localhost:4173/signin';
-      const realSignupUrl = formData.role === 'Team Lead'
-        ? `http://localhost:4174/login?email=${encodeURIComponent(formData.email.trim())}`
-        : `http://localhost:4173/signin?email=${encodeURIComponent(formData.email.trim())}`;
-
-      setShareableLink(realSignupUrl);
-      
       setCreatedUserSummary({
         employeeId: cleanEmpId,
         name: formData.name.trim(),
-        email: formData.email.trim(),
-        password: formData.password || 'Password123',
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
         role: formData.role,
         department: finalDepartment,
         loginUrl: targetLoginUrl,
-        inviteToken: tokenUsed,
-        shareableLink: realSignupUrl,
-        emailNotification: (addedUser as any).emailNotification
       });
-      
+
       setIsSuccess(true);
     } catch (err: any) {
       setErrors((prev) => ({
         ...prev,
-        employeeId: err?.message || 'Employee ID already exists.'
+        employeeId: err?.message || 'Failed to create user. Employee ID or Email may already exist.'
       }));
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareableLink);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const resetForm = () => {
@@ -218,17 +196,29 @@ export const AddUserPage: React.FC = () => {
       password: '',
       confirmPassword: '',
       userDetails: '',
-      sendEmailInvite: true
     });
     setErrors({});
     setIsSuccess(false);
   };
 
+  const handleCancel = () => {
+    resetForm();
+    navigate('/admin/administration/users');
+  };
+
+  // Filter Team Leads based on selected department
   const currentDepartmentName = formData.department === 'Others'
     ? (formData.customDepartment.trim() || 'Other')
-    : (formData.department || 'IT Support');
+    : (formData.department || '');
 
-  const availableTeamLeads = OrganizationService.getTeamLeadsByDepartment(currentDepartmentName);
+  const filteredTeamLeads = currentDepartmentName
+    ? teamLeadsFromDb.filter(tl => 
+        tl.department.toLowerCase().includes(currentDepartmentName.toLowerCase()) || 
+        currentDepartmentName.toLowerCase().includes(tl.department.toLowerCase())
+      )
+    : teamLeadsFromDb;
+
+  const displayTeamLeads = filteredTeamLeads.length > 0 ? filteredTeamLeads : teamLeadsFromDb;
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -237,138 +227,81 @@ export const AddUserPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/admin/dashboard')}
-              className="text-xs text-slate-500 hover:text-slate-900 flex items-center gap-1 font-medium cursor-pointer"
+              type="button"
+              onClick={handleCancel}
+              className="text-xs font-semibold text-[#0284C7] hover:underline flex items-center gap-1 cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Dashboard
+              <ArrowLeft className="w-3.5 h-3.5" /> Back to User Directory
             </button>
-            <span className="text-slate-300">•</span>
-            <Badge variant="primary" dot>User Provisioning</Badge>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1 mb-0">Add New User</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Provision team members, set roles and department access, and issue onboarding invitations.
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight mt-1">Add New User</h1>
+          <p className="text-xs text-slate-500">
+            Create and provision a verified account for an Admin, Team Lead, or Employee directly.
           </p>
         </div>
       </div>
 
-      {isSuccess ? (
-        <Card className="border-emerald-200 bg-emerald-50/40">
-          <div className="text-center py-8 space-y-4 max-w-md mx-auto">
-            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto ring-8 ring-emerald-50 border border-emerald-200">
-              <UserCheck className="w-7 h-7" />
+      {isSuccess && createdUserSummary ? (
+        <Card>
+          <div className="text-center py-6 space-y-4 max-w-lg mx-auto">
+            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-600">
+              <Check className="w-6 h-6" />
             </div>
+
             <div>
-              <h3 className="text-lg font-bold text-slate-900">User Successfully Created!</h3>
-              <p className="text-xs text-slate-600 mt-1">
-                Account created for <strong className="text-slate-900">{formData.name}</strong> ({formData.role}) in {formData.department === 'Others' ? formData.customDepartment : formData.department}.
+              <h3 className="text-lg font-bold text-slate-900">User Successfully Created</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Account has been directly activated in the enterprise database.
               </p>
             </div>
 
-            {/* Team Lead / Employee Credentials & Verification Details */}
-            {createdUserSummary && (
-              <div className="p-4 bg-white border border-slate-200 rounded-xl text-left space-y-3 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <UserCheck className="w-4 h-4 text-[#0284C7]" /> Login Credentials & Verification
-                  </span>
-                  <Badge variant="primary">
-                    {createdUserSummary.role}
-                  </Badge>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-3 space-y-2 text-xs font-mono">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans font-medium">Employee ID:</span>
-                    <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">{createdUserSummary.employeeId}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans font-medium">Login Email:</span>
-                    <span className="font-semibold text-slate-900">{createdUserSummary.email}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans font-medium">Temporary Password:</span>
-                    <span className="font-bold text-[#0284C7] bg-white px-2 py-0.5 rounded border border-slate-200">{createdUserSummary.password}</span>
-                  </div>
-                  {createdUserSummary.inviteToken && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-500 font-sans font-medium">Verification Token:</span>
-                      <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">{createdUserSummary.inviteToken}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-sans font-medium">Login Portal:</span>
-                    <a href={createdUserSummary.loginUrl} target="_blank" rel="noreferrer" className="text-[#0284C7] hover:underline font-sans text-[11px]">
-                      {createdUserSummary.loginUrl}
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 justify-center text-xs font-semibold border-slate-300"
-                    onClick={() => {
-                      const text = `Ticketing Platform Account Details:\nEmployee ID: ${createdUserSummary.employeeId}\nEmail: ${createdUserSummary.email}\nPassword: ${createdUserSummary.password}\nVerification Token: ${createdUserSummary.inviteToken || 'N/A'}\nSignup Link: ${createdUserSummary.shareableLink || ''}\nLogin Portal: ${createdUserSummary.loginUrl}`;
-                      navigator.clipboard.writeText(text);
-                      setCopiedCreds(true);
-                      setTimeout(() => setCopiedCreds(false), 2000);
-                    }}
-                    icon={copiedCreds ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  >
-                    {copiedCreds ? 'Copied Details!' : 'Copy Credentials & Token'}
-                  </Button>
-                  {createdUserSummary.shareableLink && (
-                    <a
-                      href={createdUserSummary.shareableLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200"
-                    >
-                      Open Link ↗
-                    </a>
-                  )}
-                </div>
-
-                {createdUserSummary.emailNotification?.smtp_sent ? (
-                  <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2 flex items-center gap-1.5">
-                    <Send className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    Live invitation email delivered to <strong>{createdUserSummary.email}</strong> via SMTP.
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2 flex items-start gap-1.5 leading-relaxed">
-                    <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                    <span>
-                      Account invitation and token prepared. For live inbox delivery to Gmail, add a 16-character Google App Password in Admin Settings. Share the onboarding link below with the user directly.
-                    </span>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Linking / Invitation Flow Section */}
             <div className="p-4 bg-white border border-slate-200 rounded-xl text-left space-y-3 shadow-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                  <Share2 className="w-4 h-4 text-[#0284C7]" /> Share Onboarding Link
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-[#0284C7]" /> Account Credentials
                 </span>
-                <Badge variant={formData.sendEmailInvite ? 'success' : 'neutral'}>
-                  {formData.sendEmailInvite ? 'Email Sent' : 'Link Ready'}
-                </Badge>
+                <Badge variant="primary">{createdUserSummary.role}</Badge>
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={shareableLink}
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-mono"
-                />
-                <Button variant="secondary" size="sm" onClick={handleCopyLink} icon={copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}>
-                  {copiedLink ? 'Copied' : 'Copy'}
-                </Button>
+              <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-3 space-y-2 text-xs font-mono">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-sans font-medium">Employee ID:</span>
+                  <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">{createdUserSummary.employeeId}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-sans font-medium">Login Email:</span>
+                  <span className="font-semibold text-slate-900">{createdUserSummary.email}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-sans font-medium">Password:</span>
+                  <span className="font-bold text-[#0284C7] bg-white px-2 py-0.5 rounded border border-slate-200">{createdUserSummary.password}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-sans font-medium">Department:</span>
+                  <span className="font-medium text-slate-800">{createdUserSummary.department}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-sans font-medium">Portal URL:</span>
+                  <a href={createdUserSummary.loginUrl} target="_blank" rel="noreferrer" className="text-[#0284C7] hover:underline font-sans text-[11px]">
+                    {createdUserSummary.loginUrl}
+                  </a>
+                </div>
               </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-center text-xs font-semibold border-slate-300"
+                onClick={() => {
+                  const text = `Ticketing Platform Account Details:\nEmployee ID: ${createdUserSummary.employeeId}\nEmail: ${createdUserSummary.email}\nPassword: ${createdUserSummary.password}\nPortal URL: ${createdUserSummary.loginUrl}`;
+                  navigator.clipboard.writeText(text);
+                  setCopiedCreds(true);
+                  setTimeout(() => setCopiedCreds(false), 2000);
+                }}
+                icon={copiedCreds ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              >
+                {copiedCreds ? 'Copied Details!' : 'Copy Credentials'}
+              </Button>
             </div>
 
             <div className="flex justify-center gap-3 pt-2">
@@ -376,19 +309,19 @@ export const AddUserPage: React.FC = () => {
                 Add Another User
               </Button>
               <Button variant="primary" size="sm" onClick={() => navigate('/admin/administration/users')}>
-                View User List
+                View User Directory
               </Button>
             </div>
           </div>
         </Card>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
-          <Card title="User Details" subtitle="Enter user identification, role and department credentials">
+          <Card title="User Details" subtitle="Enter user credentials, role and department assignment">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Full Name */}
               <Input
                 label="Full Name *"
-                placeholder="e.g. John Doe"
+                placeholder="e.g. Rajesh Kumar"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 error={errors.name}
@@ -398,7 +331,7 @@ export const AddUserPage: React.FC = () => {
               {/* Employee ID */}
               <Input
                 label="Employee ID *"
-                placeholder="e.g. TL001 or EMP001"
+                placeholder="e.g. OKL101"
                 value={formData.employeeId}
                 onChange={(e) => {
                   setFormData({ ...formData, employeeId: e.target.value.toUpperCase() });
@@ -406,14 +339,14 @@ export const AddUserPage: React.FC = () => {
                 }}
                 error={errors.employeeId}
                 icon={<BadgeCheck className="w-4 h-4" />}
-                helperText="Unique ID (e.g. TL001 for Team Lead, EMP001 for Employee)"
+                helperText="Authoritative format: OKL### (e.g. OKL101, OKL102)"
               />
 
               {/* Email */}
               <Input
                 label="Email Address *"
                 type="email"
-                placeholder="john.doe@company.com"
+                placeholder="name@oklut.com"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 error={errors.email}
@@ -422,10 +355,11 @@ export const AddUserPage: React.FC = () => {
 
               {/* Phone Number */}
               <Input
-                label="Phone Number *"
-                placeholder="+1 (555) 000-0000"
+                label="Phone Number (10 digits) *"
+                placeholder="e.g. 9876543210"
+                maxLength={10}
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '') })}
                 error={errors.phone}
                 icon={<Phone className="w-4 h-4" />}
               />
@@ -453,47 +387,43 @@ export const AddUserPage: React.FC = () => {
                   { value: 'Marketing', label: 'Marketing' },
                   { value: 'Legal', label: 'Legal' },
                   { value: 'Facilities', label: 'Facilities' },
-                  { value: 'Others', label: 'Others' },
+                  { value: 'Others', label: 'Others (Custom)' },
                 ]}
               />
 
-              {/* Custom Department Field if "Others" selected */}
+              {/* Custom Department */}
               {formData.department === 'Others' && (
-                <div className="sm:col-span-2">
-                  <Input
-                    label="Department Name / Type Department *"
-                    placeholder="Enter department name"
-                    value={formData.customDepartment}
-                    onChange={(e) => {
-                      setFormData({ ...formData, customDepartment: e.target.value });
-                      if (errors.customDepartment) setErrors({ ...errors, customDepartment: undefined });
-                    }}
-                    error={errors.customDepartment}
-                    icon={<Building2 className="w-4 h-4" />}
-                  />
-                </div>
+                <Input
+                  label="Specify Department Name *"
+                  placeholder="Enter custom department"
+                  value={formData.customDepartment}
+                  onChange={(e) => setFormData({ ...formData, customDepartment: e.target.value })}
+                  error={errors.customDepartment}
+                  icon={<Building2 className="w-4 h-4" />}
+                />
               )}
 
               {/* Role */}
               <Select
-                label="Role *"
+                label="System Role *"
                 value={formData.role}
                 onChange={(e) => {
-                  setFormData({ ...formData, role: e.target.value, teamLead: '' });
+                  setFormData({ ...formData, role: e.target.value });
                   if (errors.role) setErrors({ ...errors, role: undefined });
                 }}
                 error={errors.role}
                 options={[
                   { value: '', label: 'Select Role', disabled: true, hidden: true },
-                  { value: 'Team Lead', label: 'Team Lead' },
-                  { value: 'Employee', label: 'Employee' },
+                  { value: 'Employee', label: 'Employee (Submit & Track Tickets)' },
+                  { value: 'Team Lead', label: 'Team Lead (Manage Team & Escalate)' },
+                  { value: 'Admin', label: 'System Admin (Full Access & Oversight)' },
                 ]}
               />
 
-              {/* Team Lead field - Shown ONLY when Role = Employee */}
+              {/* Team Lead Selection (Visible when Employee role selected) */}
               {formData.role === 'Employee' && (
                 <Select
-                  label="Team Lead *"
+                  label="Assigned Team Lead *"
                   value={formData.teamLead}
                   onChange={(e) => {
                     setFormData({ ...formData, teamLead: e.target.value });
@@ -502,9 +432,9 @@ export const AddUserPage: React.FC = () => {
                   error={errors.teamLead}
                   options={[
                     { value: '', label: 'Select Team Lead', disabled: true, hidden: true },
-                    ...availableTeamLeads.map((tl) => ({
-                      value: `${tl.name} (${tl.employeeId})`,
-                      label: `${tl.name} — ${tl.employeeId} (${tl.role})`,
+                    ...displayTeamLeads.map((tl) => ({
+                      value: `${tl.name} (${tl.id})`,
+                      label: `${tl.name} — ${tl.id} (${tl.department})`,
                     })),
                   ]}
                 />
@@ -515,7 +445,7 @@ export const AddUserPage: React.FC = () => {
                 <Input
                   label="Password *"
                   type="password"
-                  placeholder="Set initial password"
+                  placeholder="Set initial account password"
                   value={formData.password}
                   onChange={(e) => {
                     setFormData({ ...formData, password: e.target.value });
@@ -523,7 +453,6 @@ export const AddUserPage: React.FC = () => {
                   }}
                   error={errors.password}
                   icon={<Key className="w-4 h-4" />}
-                  helperText={formData.sendEmailInvite ? 'Optional if instant email invitation is enabled' : undefined}
                 />
                 <PasswordStrengthValidator password={formData.password} />
               </div>
@@ -547,60 +476,39 @@ export const AddUserPage: React.FC = () => {
               {/* Additional User Details */}
               <div className="sm:col-span-2">
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  User Notes / Access Details
+                  User Notes / Access Details (Optional)
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={formData.userDetails}
                   onChange={(e) => setFormData({ ...formData, userDetails: e.target.value })}
-                  placeholder="Specify Employee ID, office location, or special workspace notes..."
-                  className="w-full bg-white border border-slate-300 rounded-lg p-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
+                  placeholder="Additional notes, office location, or special workspace instructions..."
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/20 transition-all"
                 />
               </div>
             </div>
-          </Card>
 
-          {/* Linking / Invitation Options */}
-          <Card title="Invitation & Access Method">
-            <div className="space-y-4">
-              <label className="flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:border-slate-300 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={formData.sendEmailInvite}
-                  onChange={(e) => setFormData({ ...formData, sendEmailInvite: e.target.checked })}
-                  className="mt-0.5 rounded border-slate-300 text-[#2563EB] focus:ring-[#2563EB]"
-                />
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                    <Send className="w-3.5 h-3.5 text-[#2563EB]" /> Send Email Invitation & Share Link
-                  </span>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Automatically dispatches an onboard invitation email containing a direct login link and password setup.
-                  </p>
-                </div>
-              </label>
-
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                <div className="text-xs text-slate-500 flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5 text-slate-400" /> All fields marked with * are required.
-                </div>
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    type="button"
-                    onClick={() => navigate('/admin/dashboard')}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="primary"
-                    type="submit"
-                    disabled={isSubmitting}
-                    icon={<UserPlus className="w-4 h-4" />}
-                  >
-                    {isSubmitting ? 'Creating User...' : 'Add User'}
-                  </Button>
-                </div>
+            {/* Action Buttons: Cancel and Add User */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-4">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <Info className="w-3.5 h-3.5 text-slate-400" /> Fields marked with * are required.
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={isSubmitting}
+                  icon={<UserPlus className="w-4 h-4" />}
+                >
+                  {isSubmitting ? 'Creating User...' : 'Add User'}
+                </Button>
               </div>
             </div>
           </Card>

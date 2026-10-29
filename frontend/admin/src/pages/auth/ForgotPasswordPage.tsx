@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { supabase } from '../../services/supabaseClient';
+import { Mail, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import { API_BASE, ApiError, apiRequest } from '../../services/backendAuth';
+
+interface ForgotPasswordResponse {
+  message: string;
+  email_sent: boolean;
+}
 
 export const ForgotPasswordPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -16,6 +21,7 @@ export const ForgotPasswordPage: React.FC = () => {
   );
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [emailSent, setEmailSent] = useState(true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,63 +32,29 @@ export const ForgotPasswordPage: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
 
     try {
-      const { data: dbUser, error: queryErr } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      // If user is a teamlead or employee, block and display restriction alert
-      if (dbUser && dbUser.role === 'teamlead') {
-        setIsSubmitting(false);
-        setRestrictedWarning(
-          'Password reset is restricted to HR and CEO/Admin accounts. For team lead password resets, please contact HR or your system administrator.'
-        );
-        return;
-      }
-
-      if (dbUser && dbUser.role === 'employee') {
-        setIsSubmitting(false);
-        setRestrictedWarning(
-          'Password reset is restricted to HR and CEO/Admin accounts. For employee password resets, please contact HR or your system administrator.'
-        );
-        return;
-      }
-
-      // If no admin account exists for this email
-      if (queryErr || !dbUser || dbUser.role !== 'admin') {
-        setIsSubmitting(false);
-        setRestrictedWarning(
-          'Password reset is restricted to HR and CEO/Admin accounts. For employee password resets, please contact HR or your system administrator.'
-        );
-        return;
-      }
-
-      // Admin account: send live reset link/code
-      const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-      await supabase
-        .from('users')
-        .update({ invite_token: `reset-${resetCode}` })
-        .eq('email', cleanEmail);
-
+      // The backend decides whether the address belongs to an administrator and
+      // never reveals that decision, so the UI cannot enumerate accounts.
       const baseUrl = window.location.href.split('#')[0].replace(/\/+$/, '');
-      const resetUrl = `${baseUrl}/#/admin/auth/reset-password?email=${encodeURIComponent(cleanEmail)}&code=${resetCode}`;
-      await fetch('http://localhost:8000/api/v1/notifications/forgot-password', {
+      const data = await apiRequest<ForgotPasswordResponse>('/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: cleanEmail,
-          name: dbUser.name || 'Admin',
-          reset_code: resetCode,
-          reset_url: resetUrl,
-          portal: 'Admin Portal',
+          reset_url: `${baseUrl}/#/admin/auth/reset-password`,
         }),
       });
-
+      setEmailSent(data.email_sent !== false);
       setIsSubmitted(true);
-    } catch (err: any) {
-      console.warn('Password reset error:', err);
-      setIsSubmitted(true);
+    } catch (err) {
+      // A network/API failure must be visible instead of pretending the mail
+      // went out.
+      setRestrictedWarning(
+        err instanceof ApiError && err.status === 0
+          ? 'Cannot reach the backend API. Make sure the server is running and try again.'
+          : err instanceof Error
+            ? err.message
+            : `Could not request a password reset from ${API_BASE}.`
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -105,13 +77,13 @@ export const ForgotPasswordPage: React.FC = () => {
           Reset password
         </h1>
         <p className="text-sm text-slate-500 mb-6 font-normal">
-          Enter your email and we'll send you a reset link.
+          Enter your admin email and we'll send you a verification code.
         </p>
 
-        {/* Restriction Alert Box: Appears when employee/teamlead tries to enter forgot pwd */}
         {restrictedWarning && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4 mb-6 text-sm text-rose-600 leading-relaxed font-normal animate-in fade-in duration-200">
-            {restrictedWarning}
+          <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50/40 p-4 mb-6 text-sm text-rose-600 leading-relaxed font-normal animate-in fade-in duration-200">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{restrictedWarning}</span>
           </div>
         )}
 
@@ -120,16 +92,25 @@ export const ForgotPasswordPage: React.FC = () => {
             <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Recovery Email Sent!</h3>
+            <h3 className="text-lg font-bold text-slate-900">Request received</h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              We sent password reset instructions to <strong className="text-slate-900">{email}</strong>. Please check your inbox.
+              If an administrator account exists for{' '}
+              <strong className="text-slate-900">{email}</strong>, a verification code has
+              been sent to that mailbox.
             </p>
+            {!emailSent && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 leading-relaxed text-left">
+                The backend could not deliver the email because SMTP is not configured.
+                Ask your system administrator to configure email delivery, or to reset the
+                password from the Admin portal.
+              </div>
+            )}
             <div className="pt-2">
               <Link
                 to={`/admin/auth/reset-password?email=${encodeURIComponent(email.trim())}`}
                 className="w-full inline-flex justify-center items-center py-2.5 px-4 rounded-xl text-xs font-semibold text-white bg-[#0284C7] hover:bg-[#0369a1] shadow-sm transition-all"
               >
-                Proceed to Reset Password
+                I have a verification code
               </Link>
             </div>
           </div>
@@ -162,7 +143,7 @@ export const ForgotPasswordPage: React.FC = () => {
               disabled={isSubmitting}
               className="w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-[#0084FF] hover:bg-[#0073e6] active:bg-[#0066cc] transition-all shadow-sm flex items-center justify-center cursor-pointer disabled:opacity-60"
             >
-              {isSubmitting ? 'Checking permissions...' : 'Send reset link'}
+              {isSubmitting ? 'Sending code...' : 'Send verification code'}
             </button>
           </form>
         )}

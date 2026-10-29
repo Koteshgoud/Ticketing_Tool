@@ -4,6 +4,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { ShieldCheck, Check, CheckCircle2, X, Lock, Sliders, Layers } from 'lucide-react';
+import { apiRequestSafe } from '../../services/backendAuth';
 
 interface RoleItem {
   id: string;
@@ -81,21 +82,21 @@ const DEFAULT_ROLES: RoleItem[] = [
   {
     id: 'admin',
     name: 'Admin',
-    users: 4,
+    users: 0,
     description: 'Unrestricted full administrative access to all tickets, configurations, and users.',
     permissions: ['Manage Users', 'Manage Tickets', 'Configure Workflows', 'View Analytics', 'System Security', 'Export Audit Logs'],
   },
   {
     id: 'teamlead',
     name: 'Team Lead',
-    users: 12,
+    users: 0,
     description: 'Departmental supervisor role with ticket escalation and staff re-assignment privileges.',
     permissions: ['Manage Tickets', 'View Analytics', 'Department Workflows', 'Create Tickets', 'View Own Tickets'],
   },
   {
     id: 'employee',
     name: 'Employee',
-    users: 120,
+    users: 0,
     description: 'Standard end-user role capable of submitting tickets and viewing own ticket history.',
     permissions: ['Create Tickets', 'View Own Tickets'],
   },
@@ -126,6 +127,36 @@ export const RolesPermissionsPage: React.FC = () => {
       // Ignore
     }
   }, [roles]);
+
+  useEffect(() => {
+    const fetchLiveUserCounts = async () => {
+      const result = await apiRequestSafe<any[]>('/admin/users');
+      if (result.error || !Array.isArray(result.data)) {
+        console.warn('Error fetching role counts:', result.error);
+        return;
+      }
+      const data = result.data;
+      const adminCount = data.filter((u) => (u.role || '').toLowerCase().includes('admin')).length;
+      const leadCount = data.filter((u) => (u.role || '').toLowerCase().includes('lead')).length;
+      const empCount = data.filter(
+        (u) =>
+          !(
+            (u.role || '').toLowerCase().includes('admin') ||
+            (u.role || '').toLowerCase().includes('lead')
+          )
+      ).length;
+
+      setRoles((prev) =>
+        prev.map((r) => {
+          if (r.id === 'admin') return { ...r, users: adminCount };
+          if (r.id === 'teamlead') return { ...r, users: leadCount };
+          if (r.id === 'employee') return { ...r, users: empCount };
+          return r;
+        })
+      );
+    };
+    fetchLiveUserCounts();
+  }, []);
 
   const handleOpenEditMatrix = (role: RoleItem) => {
     setEditingRole(role);

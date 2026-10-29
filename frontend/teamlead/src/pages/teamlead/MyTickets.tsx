@@ -24,9 +24,11 @@ export const MyTickets: React.FC = () => {
 
   const myTickets = (tickets || []).filter(
     (t) =>
-      (t.employeeId && user?.id && t.employeeId === user.id) ||
+      (t.employeeId && user?.id && String(t.employeeId) === String(user.id)) ||
       (t.employeeEmail && user?.email && t.employeeEmail.toLowerCase() === user.email.toLowerCase()) ||
-      (t.employee && user?.name && t.employee.toLowerCase() === user.name.toLowerCase())
+      (t.employee && user?.name && t.employee.toLowerCase() === user.name.toLowerCase()) ||
+      (t as any).requester_id === user?.id ||
+      (t as any).is_created_by_me === true
   );
 
   const filtered = myTickets.filter(

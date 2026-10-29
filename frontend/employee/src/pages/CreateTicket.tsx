@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, ArrowLeft, CheckCircle, Mail, ExternalLink, AlertCircle, Check } from 'lucide-react';
+import { PlusCircle, ArrowLeft, CheckCircle, Mail, ExternalLink, AlertCircle, Check, X } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import { EmailService, type SentEmailNotification } from '../services/emailService';
 import type { TicketPriority } from '../types';
@@ -10,12 +10,12 @@ import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
 import { AttachmentFilePicker, type AttachedFile } from '../components/ui/AttachmentFilePicker';
 import { TeamLeadEmployeeSelector } from '../components/ui/TeamLeadEmployeeSelector';
-import type { TeamLeadItem, EmployeeItem } from '../services/organizationService';
+import { OrganizationService, type TeamLeadItem, type EmployeeItem } from '../services/organizationService';
 
-const DEPARTMENT_OPTIONS = [
+const DEFAULT_DEPARTMENT_OPTIONS = [
   'IT Support',
   'Finance',
-  'HR Operations',
+  'HR',
   'Facilities',
   'General Administration',
   'Other',
@@ -24,6 +24,7 @@ const DEPARTMENT_OPTIONS = [
 export const CreateTicket: React.FC = () => {
   const navigate = useNavigate();
 
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>(DEFAULT_DEPARTMENT_OPTIONS);
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Hardware & Devices');
@@ -37,24 +38,41 @@ export const CreateTicket: React.FC = () => {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [selectedEmployeeObjs, setSelectedEmployeeObjs] = useState<EmployeeItem[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdTicketId, setCreatedTicketId] = useState('');
   const [sentEmailLogs, setSentEmailLogs] = useState<SentEmailNotification[]>([]);
 
+  useEffect(() => {
+    OrganizationService.syncFromDatabase().then(() => {
+      const depts = OrganizationService.getDepartments();
+      if (depts && depts.length > 0) {
+        setDepartmentOptions(depts.map((d) => d.name));
+      }
+    });
+  }, []);
+
   const toggleDepartment = (deptName: string) => {
+    let next: string[];
     if (selectedDepartments.includes(deptName)) {
       if (selectedDepartments.length === 1) return; // Keep at least 1 department selected
-      setSelectedDepartments(selectedDepartments.filter((d) => d !== deptName));
+      next = selectedDepartments.filter((d) => d !== deptName);
     } else {
-      setSelectedDepartments([...selectedDepartments, deptName]);
+      next = [...selectedDepartments, deptName];
     }
+    setSelectedDepartments(next);
+    setSelectedTeamLeadIds([]);
+    setSelectedTeamLeadObjs([]);
+    setSelectedEmployeeIds([]);
+    setSelectedEmployeeObjs([]);
   };
 
   const isOtherDeptSelected = selectedDepartments.includes('Other');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setValidationError(null);
 
     // 17. VALIDATION
@@ -66,7 +84,8 @@ export const CreateTicket: React.FC = () => {
       setValidationError('Department is required');
       return;
     }
-    if (selectedTeamLeadIds.length === 0) {
+    const deptLeads = selectedDepartments.flatMap((d) => OrganizationService.getTeamLeadsByDepartment(d));
+    if (deptLeads.length > 0 && selectedTeamLeadIds.length === 0) {
       setValidationError('Team Lead is required');
       return;
     }
@@ -88,16 +107,27 @@ export const CreateTicket: React.FC = () => {
       dept === 'Other' ? (customDepartment.trim() || 'Other') : dept
     );
 
-    const attachmentStrings = attachedFiles.map((f) => `${f.name} (${f.size})`);
+    const seen = new Set<string>();
+    const uniqueFiles = attachedFiles.filter((f) => {
+      const key = `${f.name.toLowerCase()}_${f.size}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const attachmentStrings = uniqueFiles.map((f) => `${f.name} (${f.size})`);
 
+    setIsSubmitting(true);
     try {
-      const newTicket = EmployeeService.createTicket({
+      const newTicket = await EmployeeService.createTicket({
         title: subject.trim(),
         description: description.trim(),
         category: finalCategory,
         departments: finalDepartments,
         priority,
         attachments: attachmentStrings,
+        rawFiles: uniqueFiles
+          .map((f) => f.file)
+          .filter((f): f is File => !!f),
         teamLeads: selectedTeamLeadObjs.map((tl) => ({
           id: tl.id,
           name: tl.name,
@@ -121,8 +151,10 @@ export const CreateTicket: React.FC = () => {
       setCreatedTicketId(newTicket.id);
       setSentEmailLogs(emails);
       setIsSuccess(true);
-    } catch {
-      setValidationError('Ticket created, but email notification failed.');
+    } catch (err: any) {
+      setValidationError(err?.message || 'Could not create ticket. Please check your selections and try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -130,9 +162,10 @@ export const CreateTicket: React.FC = () => {
     const isEmailsSent = sentEmailLogs.length > 0;
 
     return (
-      <div className="max-w-2xl mx-auto space-y-6 font-sans my-8">
-        {/* Ticket Created Status Card */}
-        <div className="bg-white p-8 rounded-2xl border border-slate-200/80 shadow-xl text-center space-y-4">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5">
+        <div className="max-w-2xl w-full mx-auto space-y-6 font-sans my-4 max-h-[92vh] overflow-y-auto">
+          {/* Ticket Created Status Card */}
+          <div className="bg-white p-8 rounded-2xl border border-slate-200/80 shadow-xl text-center space-y-4">
           {isEmailsSent ? (
             <>
               <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
@@ -263,7 +296,8 @@ export const CreateTicket: React.FC = () => {
           </Button>
         </div>
       </div>
-    );
+    </div>
+  );
   }
 
   const activeDepartments = selectedDepartments.map((dept) =>
@@ -271,40 +305,38 @@ export const CreateTicket: React.FC = () => {
   );
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 font-sans pb-12">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#0284C7] transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back
-        </button>
-      </div>
-
-      {/* Main Form Container */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-sky-50 text-[#0284C7] border border-sky-100 flex items-center justify-center shrink-0">
-            <PlusCircle className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col my-4 max-h-[92vh] animate-in zoom-in-95 duration-150">
+        {/* Fixed Header */}
+        <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 rounded-xl bg-sky-100 text-[#0284C7] font-bold">
+              <PlusCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">Create Support Ticket (Employee)</h2>
+              <p className="text-xs text-slate-500">Route tickets within teams & assign to team leads or members</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-900">Create New Support Ticket</h1>
-            <p className="text-xs text-slate-500 font-medium">
-              Fill out the form below to submit a new issue. Select multiple departments & team leads as needed.
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+            title="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {validationError && (
-          <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
+          <div className="mx-5 mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2 shrink-0">
             <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
             <span>{validationError}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        {/* Scrollable Form Body */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto flex-1 font-sans">
           {/* Subject Field */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -330,7 +362,7 @@ export const CreateTicket: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {DEPARTMENT_OPTIONS.map((dept) => {
+              {departmentOptions.map((dept) => {
                 const isSelected = selectedDepartments.includes(dept);
                 return (
                   <button
@@ -467,19 +499,19 @@ export const CreateTicket: React.FC = () => {
             <Button
               type="button"
               variant="outline"
-              onClick={() => navigate('/dashboard')}
-              className="border-slate-200 text-slate-600 font-semibold"
+              onClick={() => navigate(-1)}
+              className="border-slate-200 text-slate-600 font-semibold text-xs"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               variant="primary"
-              disabled={!subject.trim() || !description.trim() || selectedDepartments.length === 0}
+              disabled={isSubmitting || !subject.trim() || !description.trim() || selectedDepartments.length === 0}
               className="bg-[#0284C7] hover:bg-[#0369a1] text-white font-semibold shadow-2xs"
             >
               <PlusCircle className="w-4 h-4 mr-1.5" />
-              Create Ticket
+              {isSubmitting ? 'Creating Ticket...' : 'Create Ticket'}
             </Button>
           </div>
         </form>

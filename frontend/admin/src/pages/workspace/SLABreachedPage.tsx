@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -7,9 +8,10 @@ import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
 import type { Ticket, User } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { ShieldAlert, CheckCircle2, UserCheck, Bell, AlertOctagon } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, UserCheck, Bell, AlertOctagon, Eye } from 'lucide-react';
 
 export const SLABreachedPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,17 +27,28 @@ export const SLABreachedPage: React.FC = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [ticketData, userData] = await Promise.all([
-      AdminApiService.getTickets('sla-breached'),
-      AdminApiService.getUsers()
-    ]);
-    setTickets(ticketData);
-    setUsers(userData);
-    setIsLoading(false);
+    try {
+      const [ticketData, userData] = await Promise.all([
+        AdminApiService.getTickets('sla-breached', true),
+        AdminApiService.getUsers()
+      ]);
+      setTickets(ticketData);
+      setUsers(userData);
+    } catch (e) {
+      console.error('Failed to load SLA breached data:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    window.addEventListener('ticket-updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('ticket-updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, []);
 
   const handleOpenModal = (ticket: Ticket) => {
@@ -53,12 +66,17 @@ export const SLABreachedPage: React.FC = () => {
     if (!selectedTicket || !newAssignee) return;
 
     setIsSubmitting(true);
+    const selectedUser = users.find((u) => u.name === newAssignee);
     const logText = `Emergency Reassign: Ticket transferred from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reasonNote ? ` Reason: ${reasonNote}` : ''}`;
 
     // Update assignee while retaining SLA Breached status
     await AdminApiService.updateTicket(
       selectedTicket.id,
-      { assignedTo: newAssignee, slaStatus: 'SLA Breached' },
+      {
+        assignedTo: newAssignee,
+        ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
+        slaStatus: 'SLA Breached'
+      } as any,
       logText
     );
 
@@ -111,12 +129,14 @@ export const SLABreachedPage: React.FC = () => {
       header: 'Action',
       cell: (row) => (
         <Button
-          variant="danger"
+          variant="ghost"
           size="sm"
-          className="text-[12px]"
-          onClick={() => handleOpenModal(row)}
+          icon={<Eye className="w-3.5 h-3.5" />}
+          className="text-xs"
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          title="View Ticket Details"
         >
-          Emergency Reassign
+          View
         </Button>
       )
     }
