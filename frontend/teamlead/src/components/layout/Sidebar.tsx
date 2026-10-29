@@ -8,7 +8,6 @@ import {
   Users,
   AlertTriangle,
   BookOpen,
-  User,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -59,7 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { label: 'Employees', path: '/teamlead/employees', icon: Users },
     { label: 'Escalations', path: '/teamlead/escalations', icon: AlertTriangle },
     { label: 'Knowledge Base', path: '/teamlead/knowledge-base', icon: BookOpen },
-    { label: 'Profile', path: '/teamlead/profile', icon: User },
   ];
 
   return (

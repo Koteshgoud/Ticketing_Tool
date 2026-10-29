@@ -17,3 +17,4 @@ export const CreateTicketPage: React.FC = () => {
 };
 
 export default CreateTicketPage;
+
