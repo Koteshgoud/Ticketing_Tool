@@ -151,15 +151,6 @@ export const MyTickets: React.FC = () => {
               <Eye className="w-3.5 h-3.5 mr-1" />
               View
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`${targetPath}?mode=work`)}
-              className="border-sky-200 text-[#0284C7] hover:bg-sky-50 text-xs font-semibold cursor-pointer"
-              title="Work on Ticket"
-            >
-              Work on Ticket
-            </Button>
           </div>
         );
       },
