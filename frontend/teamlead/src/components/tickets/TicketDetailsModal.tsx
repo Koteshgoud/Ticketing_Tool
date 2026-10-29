@@ -17,13 +17,17 @@ import {
   MessageSquare,
   FileText,
   Download,
-  Eye
+  Eye,
+  UploadCloud,
+  Loader2,
+  Plus
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';
 import { PRIORITIES, STATUSES } from '../../utils/constants';
 import { ticketService } from '../../services/ticketService';
 import { authenticatedFetch, API_BASE, withAccessToken } from '../../services/backendAuth';
+import { AttachmentPicker, FileAttachmentItem } from '../common/AttachmentPicker';
 
 interface TicketDetailsModalProps {
   ticket: Ticket | null;
@@ -88,6 +92,48 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
     downloadUrl?: string;
   } | null>(null);
   const [modalAttachments, setModalAttachments] = useState<any[]>(ticket.attachments || []);
+  const [newAttachmentsToUpload, setNewAttachmentsToUpload] = useState<FileAttachmentItem[]>([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentSuccess, setAttachmentSuccess] = useState<string | null>(null);
+
+  const loadLiveAttachments = async (tid: string) => {
+    try {
+      const res = await ticketService.getAttachmentsDetailed(tid);
+      if (res.attachments) {
+        setModalAttachments(res.attachments);
+      }
+    } catch (e) {
+      console.warn('Could not refresh attachments:', e);
+    }
+  };
+
+  const handleUploadAttachments = async () => {
+    if (newAttachmentsToUpload.length === 0) return;
+    const files = newAttachmentsToUpload.map((a) => a.file).filter(Boolean) as File[];
+    if (files.length === 0) return;
+
+    setIsUploadingAttachments(true);
+    setAttachmentError(null);
+    setAttachmentSuccess(null);
+
+    try {
+      const ok = await ticketService.uploadAttachments(currentTicket.id, files);
+      if (ok) {
+        setAttachmentSuccess(`${files.length} attachment(s) uploaded successfully!`);
+        setNewAttachmentsToUpload([]);
+        showToast(`${files.length} attachment(s) uploaded successfully!`);
+        await loadLiveAttachments(currentTicket.id);
+        window.dispatchEvent(new CustomEvent('ticket-updated'));
+      } else {
+        setAttachmentError('Failed to upload attachments. Please check network and try again.');
+      }
+    } catch (err: any) {
+      setAttachmentError(err?.message || 'Error uploading attachments.');
+    } finally {
+      setIsUploadingAttachments(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -254,7 +300,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                 }`}
               >
                 <Paperclip className="w-4 h-4" />
-                Attachments ({ticket.attachments?.length || 0})
+                Attachments ({modalAttachments.length})
               </button>
             </div>
 
@@ -365,40 +411,103 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 
             {/* Tab 3: Attachments */}
             {activeTab === 'attachments' && (
-              <div className="space-y-2">
-                {modalAttachments.length === 0 ? (
-                  <p className="text-center text-xs text-slate-400 py-6">No attachments uploaded.</p>
-                ) : (
-                  modalAttachments.map((att: any, i: number) => (
-                    <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <FileText className="w-4 h-4 text-sky-600" />
-                        <div>
-                          <p className="font-semibold text-slate-800">{att.name}</p>
-                          <p className="text-[10px] text-slate-400">{att.size}</p>
+              <div className="space-y-4">
+                {/* Upload Section */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-sky-600" />
+                      Attach Files to this Ticket
+                    </span>
+                    <span className="text-[11px] text-slate-400">Add documents, logs, or screenshots</span>
+                  </div>
+
+                  <AttachmentPicker
+                    attachments={newAttachmentsToUpload}
+                    onChange={setNewAttachmentsToUpload}
+                  />
+
+                  {attachmentError && (
+                    <div className="p-2 bg-rose-50 border border-rose-200 text-rose-700 text-[11px] rounded-lg flex items-center gap-1.5 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                      <span>{attachmentError}</span>
+                    </div>
+                  )}
+
+                  {attachmentSuccess && (
+                    <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] rounded-lg flex items-center gap-1.5 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                      <span>{attachmentSuccess}</span>
+                    </div>
+                  )}
+
+                  {newAttachmentsToUpload.length > 0 && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleUploadAttachments}
+                        disabled={isUploadingAttachments}
+                        className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isUploadingAttachments ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Uploading…</span>
+                          </>
+                        ) : (
+                          <>
+                            <UploadCloud className="w-3.5 h-3.5" />
+                            <span>Upload {newAttachmentsToUpload.length} Attachment(s)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Existing Attachments List */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Uploaded Attachments ({modalAttachments.length})
+                  </div>
+                  {modalAttachments.length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-6 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                      No attachments uploaded for this ticket yet.
+                    </p>
+                  ) : (
+                    modalAttachments.map((att: any, i: number) => (
+                      <div key={i} className="p-3 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between hover:border-slate-300 transition-colors shadow-2xs">
+                        <div className="flex items-center space-x-2.5 truncate min-w-0 pr-3">
+                          <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 border border-sky-100">
+                            <FileText className="w-4 h-4" />
+                          </div>
+                          <div className="truncate">
+                            <p className="font-semibold text-slate-800 truncate" title={att.name}>{att.name}</p>
+                            <p className="text-[10px] text-slate-400">{att.size || 'N/A'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleViewAttachment(att)}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <Eye className="w-3 h-3 text-slate-500" />
+                            <span>View</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadAttachment(att.name, att.url)}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <Download className="w-3 h-3 text-sky-600" />
+                            <span>Download</span>
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleViewAttachment(att)}
-                          className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <Eye className="w-3 h-3 text-slate-500" />
-                          <span>View</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadAttachment(att.name, att.url)}
-                          className="px-2 py-1 text-[11px] font-semibold text-sky-600 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <Download className="w-3 h-3 text-sky-600" />
-                          <span>Download</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </div>

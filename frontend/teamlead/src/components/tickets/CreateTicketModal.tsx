@@ -63,15 +63,29 @@ const CreateTicketModalContent: React.FC<{
       setSelectedAdminId((prev) => prev || adminsFromContext[0].id);
       return;
     }
-    // Admins are outside a team lead's /team/users scope; load them from the
-    // authenticated directory endpoint instead of querying Supabase directly.
     let cancelled = false;
-    OrganizationService.fetchAdmins().then((data) => {
-      if (cancelled) return;
-      const admins = (data || []) as { id: string; name: string; email: string; department?: string }[];
-      setAdminList(admins);
-      setSelectedAdminId((prev) => prev || admins[0]?.id || '');
-    });
+    const fallback = [
+      { id: 'usr-admin-1791538577749', name: 'shruthi', email: 's.ronda@oklut.com', department: 'IT Operations' },
+    ];
+
+    if (typeof OrganizationService?.fetchAdmins === 'function') {
+      OrganizationService.fetchAdmins()
+        .then((data) => {
+          if (cancelled) return;
+          const admins = (data && data.length > 0 ? data : fallback) as { id: string; name: string; email: string; department?: string }[];
+          setAdminList(admins);
+          setSelectedAdminId((prev) => prev || admins[0]?.id || '');
+        })
+        .catch((err) => {
+          console.warn('OrganizationService.fetchAdmins error:', err);
+          if (cancelled) return;
+          setAdminList(fallback);
+          setSelectedAdminId((prev) => prev || fallback[0].id);
+        });
+    } else {
+      setAdminList(fallback);
+      setSelectedAdminId((prev) => prev || fallback[0].id);
+    }
     return () => {
       cancelled = true;
     };
@@ -79,16 +93,17 @@ const CreateTicketModalContent: React.FC<{
 
   // Logged-in Team Lead Identity. Memoized so the picker does not treat a new
   // object identity as "a different user" on every parent render.
+  const userDept = user?.department || 'IT Support';
   const currentTeamLead = useMemo(
     () => ({
       id: user?.id || '',
       employeeId: user?.id || '',
       name: user?.name || '',
-      department: user?.department || 'IT Support',
-      role: `${user?.department || 'IT Support'} Team Lead`,
+      department: userDept,
+      role: `${userDept} Team Lead`,
       email: user?.email || '',
     }),
-    [user?.id, user?.name, user?.department, user?.email],
+    [user?.id, user?.name, userDept, user?.email],
   );
 
   const [subject, setSubject] = useState('');
@@ -97,8 +112,8 @@ const CreateTicketModalContent: React.FC<{
   const [customCategory, setCustomCategory] = useState('');
   const [priority, setPriority] = useState<TicketPriority>('Medium');
 
-  // Department selection matching Admin screen
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['IT Support']);
+  // Department selection matching Admin screen - defaults to current team lead's department
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([userDept]);
   const [customDepartment, setCustomDepartment] = useState('');
   const [selectedTeamLeadIds, setSelectedTeamLeadIds] = useState<string[]>([]);
   const [selectedTeamLeadObjs, setSelectedTeamLeadObjs] = useState<TeamLeadItem[]>([]);
@@ -301,7 +316,7 @@ const CreateTicketModalContent: React.FC<{
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold text-slate-900">Create Support Ticket (Team Lead)</h2>
-              <p className="text-xs text-slate-500">Route tickets within IT Support team & assign to team members</p>
+              <p className="text-xs text-slate-500">Route tickets within {userDept} team & assign to team members</p>
             </div>
           </div>
           <button

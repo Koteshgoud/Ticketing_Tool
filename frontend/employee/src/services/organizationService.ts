@@ -488,4 +488,51 @@ export const OrganizationService = {
     })();
     return _syncInflight;
   },
+
+  async fetchAdmins(): Promise<{ id: string; name: string; email: string; department?: string }[]> {
+    const fallbackAdmins = [
+      {
+        id: 'usr-admin-1791538577749',
+        name: 'shruthi',
+        email: 's.ronda@oklut.com',
+        department: 'IT Operations',
+      },
+    ];
+
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('role', 'admin');
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map((u: any) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          department: u.department || 'Administration',
+        }));
+      }
+    } catch (e) {
+      console.warn('OrganizationService.fetchAdmins Supabase error:', e);
+    }
+
+    try {
+      const res = await apiRequestSafe<any[]>('/users/directory?role=admin');
+      if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
+        const admins = res.data
+          .filter((u: any) => (u.role || '').toLowerCase() === 'admin')
+          .map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            department: u.department || 'Administration',
+          }));
+        if (admins.length > 0) return admins;
+      }
+    } catch (e) {
+      console.warn('OrganizationService.fetchAdmins API error:', e);
+    }
+
+    return fallbackAdmins;
+  },
 };

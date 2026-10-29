@@ -54,6 +54,7 @@ import { Escalations } from '../../../teamlead/src/pages/teamlead/Escalations';
 import { Reports } from '../../../teamlead/src/pages/teamlead/Reports';
 import { KnowledgeBase as TeamLeadKB } from '../../../teamlead/src/pages/teamlead/KnowledgeBase';
 import { TeamLeadProfile } from '../../../teamlead/src/pages/teamlead/TeamLeadProfile';
+import { CreateTicketPage as TeamLeadCreateTicket } from '../../../teamlead/src/pages/teamlead/CreateTicketPage';
 
 import { getCurrentSessionUser } from '../services/unifiedAuth';
 
@@ -218,6 +219,7 @@ export const AppRoutes: React.FC = () => {
       >
         <Route index element={<Navigate to="/teamlead/dashboard" replace />} />
         <Route path="dashboard" element={<TeamLeadDashboard />} />
+        <Route path="create-ticket" element={<TeamLeadCreateTicket />} />
         <Route path="team-tickets" element={<TeamTickets />} />
         <Route path="assigned-tickets" element={<TeamLeadAssignedTickets />} />
         <Route path="assigned-tickets/:ticketId" element={<TeamLeadTicketDetails />} />

@@ -91,12 +91,14 @@ export const TeamLeadEmployeeSelector: React.FC<TeamLeadEmployeeSelectorProps> =
     OrganizationService.syncFromDatabase().then(() => {
       if (cancelled) return;
       if (currentUserId) {
+        const deptNorm = (currentUserDepartment || '').toLowerCase().trim();
+        const deptId = (deptNorm === 'hr' || deptNorm.includes('hr')) ? 'D003' : 'D001';
         OrganizationService.addTeamLead({
           id: currentUserId,
           employeeId: currentUserEmployeeId,
           name: currentUserName || 'Team Lead',
           role: currentUserRole || `${currentUserDepartment || 'IT Support'} Team Lead`,
-          departmentId: 'D001',
+          departmentId: deptId,
           departmentName: currentUserDepartment || 'IT Support',
           email: currentUserEmail,
         });
