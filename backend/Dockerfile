@@ -9,8 +9,8 @@ WORKDIR /app
 # ── Stage: deps ─────────────────────────────────────────────────────────────
 FROM base AS deps
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e ".[dev]"
+COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Stage: dev (used by docker compose) ─────────────────────────────────────
 FROM deps AS dev
@@ -21,5 +21,5 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload
 FROM deps AS prod
 COPY . .
 RUN useradd --create-home --shell /bin/bash appuser && chown -R appuser /app
-USER appuser
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+ENV PORT=8000
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

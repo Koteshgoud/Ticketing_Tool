@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTickets } from '../../hooks/useTickets';
 import { TicketCategory, TicketPriority } from '../../types/ticket';
 import { CATEGORIES, PRIORITIES } from '../../utils/constants';
-import { X, PlusCircle, AlertCircle, Building2, CheckCircle2, Check } from 'lucide-react';
+import { X, PlusCircle, AlertCircle, CheckCircle2, Check, Shield } from 'lucide-react';
 import { AttachmentPicker, FileAttachmentItem } from '../common/AttachmentPicker';
 import { TeamLeadEmployeeSelector } from './TeamLeadEmployeeSelector';
 import { useAuth } from '../../hooks/useAuth';
+import { teamLeadService } from '../../services/teamLeadService';
 import {
   OrganizationService,
   type TeamLeadItem,
@@ -21,7 +22,7 @@ interface CreateTicketModalProps {
 const DEPARTMENT_OPTIONS = [
   'IT Support',
   'Finance',
-  'HR Operations',
+  'HR',
   'Facilities',
   'General Administration',
   'Other',
@@ -32,19 +33,63 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  // The form (and its data loading) is only mounted while the modal is open.
+  // Rendering it unconditionally made every dashboard load fire the
+  // directory/admin requests for a dialog nobody could see.
   if (!isOpen) return null;
+  return <CreateTicketModalContent onClose={onClose} onSuccess={onSuccess} />;
+};
 
-  const { user } = useAuth();
+const CreateTicketModalContent: React.FC<{
+  onClose: () => void;
+  onSuccess?: (msg: string) => void;
+}> = ({ onClose, onSuccess }) => {
+  const { user, users } = useAuth();
   const { createTicket } = useTickets();
 
-  // Logged-in Team Lead Identity
-  const currentTeamLead = {
-    id: user?.id || 'OKL001',
-    employeeId: user?.id || 'OKL001',
-    name: user?.name || 'Kotesh Goud',
-    department: user?.department || 'IT Support',
-    role: `${user?.department || 'IT Support'} Team Lead`,
-  };
+  // Admin Assistance State
+  const [notifyAdmin, setNotifyAdmin] = useState(false);
+  const [selectedAdminId, setSelectedAdminId] = useState('');
+  const [adminList, setAdminList] = useState<{ id: string; name: string; email: string; department?: string }[]>([]);
+
+  const adminsFromContext = useMemo(
+    () => (users || []).filter((u) => u.role === 'admin'),
+    [users],
+  );
+
+  useEffect(() => {
+    if (adminsFromContext.length > 0) {
+      setAdminList(adminsFromContext);
+      setSelectedAdminId((prev) => prev || adminsFromContext[0].id);
+      return;
+    }
+    // Admins are outside a team lead's /team/users scope; load them from the
+    // authenticated directory endpoint instead of querying Supabase directly.
+    let cancelled = false;
+    OrganizationService.fetchAdmins().then((data) => {
+      if (cancelled) return;
+      const admins = (data || []) as { id: string; name: string; email: string; department?: string }[];
+      setAdminList(admins);
+      setSelectedAdminId((prev) => prev || admins[0]?.id || '');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [adminsFromContext]);
+
+  // Logged-in Team Lead Identity. Memoized so the picker does not treat a new
+  // object identity as "a different user" on every parent render.
+  const currentTeamLead = useMemo(
+    () => ({
+      id: user?.id || '',
+      employeeId: user?.id || '',
+      name: user?.name || '',
+      department: user?.department || 'IT Support',
+      role: `${user?.department || 'IT Support'} Team Lead`,
+      email: user?.email || '',
+    }),
+    [user?.id, user?.name, user?.department, user?.email],
+  );
 
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -55,28 +100,24 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   // Department selection matching Admin screen
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['IT Support']);
   const [customDepartment, setCustomDepartment] = useState('');
-  const [selectedTeamLeadIds, setSelectedTeamLeadIds] = useState<string[]>([currentTeamLead.id]);
-  const [selectedTeamLeadObjs, setSelectedTeamLeadObjs] = useState<TeamLeadItem[]>([
-    {
-      id: currentTeamLead.id,
-      employeeId: currentTeamLead.employeeId,
-      name: currentTeamLead.name,
-      role: currentTeamLead.role,
-      departmentId: 'D001',
-      departmentName: currentTeamLead.department,
-      email: user?.email || '',
-    },
-  ]);
+  const [selectedTeamLeadIds, setSelectedTeamLeadIds] = useState<string[]>([]);
+  const [selectedTeamLeadObjs, setSelectedTeamLeadObjs] = useState<TeamLeadItem[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [selectedEmployeeObjs, setSelectedEmployeeObjs] = useState<EmployeeItem[]>([]);
 
   const toggleDepartment = (deptName: string) => {
+    let next: string[];
     if (selectedDepartments.includes(deptName)) {
       if (selectedDepartments.length === 1) return; // Keep at least one department selected
-      setSelectedDepartments(selectedDepartments.filter((d) => d !== deptName));
+      next = selectedDepartments.filter((d) => d !== deptName);
     } else {
-      setSelectedDepartments([...selectedDepartments, deptName]);
+      next = [...selectedDepartments, deptName];
     }
+    setSelectedDepartments(next);
+    setSelectedTeamLeadIds([]);
+    setSelectedTeamLeadObjs([]);
+    setSelectedEmployeeIds([]);
+    setSelectedEmployeeObjs([]);
   };
 
   const isOtherDeptSelected = selectedDepartments.includes('Other');
@@ -89,8 +130,9 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
   const [fileAttachments, setFileAttachments] = useState<FileAttachmentItem[]>([]);
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -107,7 +149,8 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
       setError('Please specify the custom department name');
       return;
     }
-    if (selectedTeamLeadIds.length === 0) {
+    const deptLeads = selectedDepartments.flatMap((d) => OrganizationService.getTeamLeadsByDepartment(d));
+    if (deptLeads.length > 0 && selectedTeamLeadIds.length === 0) {
       setError('Team Lead is required');
       return;
     }
@@ -125,19 +168,59 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const finalDepartments = selectedDepartments.map((dept) =>
         dept === 'Other' ? (customDepartment.trim() || 'Other') : dept
       );
       const mainDepartmentStr = finalDepartments.join(' & ');
 
-      const newTicket = createTicket({
+      const selectedAdmin = notifyAdmin && selectedAdminId ? adminList.find(a => a.id === selectedAdminId) : null;
+      const combinedTaggedMembers = [...selectedEmployeeObjs.map((emp) => ({
+        id: emp.id,
+        name: emp.name,
+        department: emp.departmentName,
+        avatar: '',
+      }))];
+
+      if (selectedAdmin) {
+        combinedTaggedMembers.push({
+          id: selectedAdmin.id,
+          name: `${selectedAdmin.name} (Admin)`,
+          department: selectedAdmin.department || 'Administration',
+          avatar: '',
+        });
+      }
+
+      const assignedTarget =
+        selectedEmployeeObjs.length > 0
+          ? {
+              assignedAgent: selectedEmployeeObjs[0].name,
+              assignedAgentId: selectedEmployeeObjs[0].id,
+              assignedToType: 'employee',
+            }
+          : selectedTeamLeadObjs.length > 0
+          ? {
+              assignedAgent: selectedTeamLeadObjs[0].name,
+              assignedAgentId: selectedTeamLeadObjs[0].id,
+              assignedToType: 'teamlead',
+            }
+          : {
+              assignedAgent: 'Unassigned',
+              assignedAgentId: undefined,
+              assignedToType: 'unassigned',
+            };
+
+      const newTicket = await createTicket({
         subject: subject.trim(),
         description: description.trim(),
         category: finalCategory as TicketCategory,
         priority,
         department: mainDepartmentStr,
         departments: finalDepartments,
+        assignedAgent: assignedTarget.assignedAgent,
+        assignedAgentId: assignedTarget.assignedAgentId,
+        assignedToType: assignedTarget.assignedToType as any,
         teamLeads: selectedTeamLeadObjs.map((tl) => ({
           id: tl.id,
           employeeId: tl.employeeId,
@@ -154,18 +237,31 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
           email: emp.email,
         })),
         employeeIds: selectedEmployeeIds,
-        taggedMembers: selectedEmployeeObjs.map((emp) => ({
-          id: emp.id,
-          name: emp.name,
-          department: emp.departmentName,
-          avatar: '',
-        })),
-        taggedMemberIds: selectedEmployeeIds,
+        taggedMembers: combinedTaggedMembers,
+        taggedMemberIds: combinedTaggedMembers.map(m => m.id),
         attachments: fileAttachments.map((f) => ({ name: f.name, size: f.size })),
+        rawFiles: fileAttachments
+          .map((f) => f.file)
+          .filter((f): f is File => !!f),
       });
 
-      // 18. NOTIFICATION
-      const successMsg = `Ticket created successfully. Email sent successfully.`;
+      // Optional admin assistance ping. In-app notifications are persisted by
+      // the backend; email delivery is a separate, SMTP-dependent capability.
+      if (selectedAdmin) {
+        try {
+          await teamLeadService.createNotification({
+            ticketId: newTicket.id,
+            title: `Admin assistance requested: ${newTicket.id}`,
+            message: `${currentTeamLead.name} requested admin assistance on "${newTicket.subject}".`,
+            type: 'warning',
+            forRole: 'admin',
+          });
+        } catch {
+          /* notification failure must not hide a successfully created ticket */
+        }
+      }
+
+      const successMsg = `Ticket ${newTicket.id} created successfully.`;
       setSuccessToast(successMsg);
 
       if (onSuccess) {
@@ -184,10 +280,12 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
         setFileAttachments([]);
         setError('');
         setSuccessToast(null);
+        setIsSubmitting(false);
         onClose();
       }, 700);
-    } catch {
-      setError('Ticket created, but email notification failed.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the ticket. Please try again.');
+      setIsSubmitting(false);
     }
   };
 
@@ -391,6 +489,46 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             />
           </div>
 
+          {/* Mention / Assign Admin for Assistance */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyAdmin}
+                  onChange={(e) => setNotifyAdmin(e.target.checked)}
+                  className="rounded-xs text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                />
+                <Shield className="w-4 h-4 text-sky-600" />
+                <span>Mention / Assign Admin for Assistance</span>
+              </label>
+              <span className="text-[10px] text-slate-400 font-medium">Optional Escalation Assistance</span>
+            </div>
+
+            {notifyAdmin && (
+              <div className="pt-2 border-t border-slate-200 animate-in fade-in duration-150">
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Select System Administrator
+                </label>
+                <select
+                  value={selectedAdminId}
+                  onChange={(e) => setSelectedAdminId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-sky-500 cursor-pointer"
+                >
+                  {adminList.length === 0 ? (
+                    <option value="">No administrators found in system</option>
+                  ) : (
+                    adminList.map((adm) => (
+                      <option key={adm.id} value={adm.id}>
+                        {adm.name} ({adm.email}) - {adm.department || 'Administration'}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            )}
+          </div>
+
           {/* Native Attachment Upload */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Attachments (Optional)</label>
@@ -411,10 +549,11 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-all cursor-pointer hover:shadow-lg"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-600/20 flex items-center gap-1.5 transition-all cursor-pointer hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <PlusCircle className="w-4 h-4" />
-              Create Ticket
+              {isSubmitting ? 'Creating…' : 'Create Ticket'}
             </button>
           </div>
         </form>

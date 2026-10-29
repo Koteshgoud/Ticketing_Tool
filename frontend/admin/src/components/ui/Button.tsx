@@ -4,6 +4,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   icon?: React.ReactNode;
+  isLoading?: boolean;
   children: React.ReactNode;
 }
 
@@ -11,6 +12,7 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   size = 'md',
   icon,
+  isLoading = false,
   children,
   className = '',
   disabled,
@@ -35,10 +37,14 @@ export const Button: React.FC<ButtonProps> = ({
   return (
     <button
       className={`${baseStyle} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
-      disabled={disabled}
+      disabled={disabled || isLoading}
       {...props}
     >
-      {icon && <span className="shrink-0">{icon}</span>}
+      {isLoading ? (
+        <span className="shrink-0 animate-spin rounded-full h-3.5 w-3.5 border-2 border-current border-t-transparent" />
+      ) : (
+        icon && <span className="shrink-0">{icon}</span>
+      )}
       {children}
     </button>
   );

@@ -61,7 +61,7 @@ export const TeamLeadProfile: React.FC = () => {
 
   const handleSubmitForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.phone && formData.phone.length > 0 && formData.phone.length !== 10) {
+    if (formData.phone && formData.phone.trim().length > 0 && !/^\d{10}$/.test(formData.phone.trim())) {
       showToast('Phone number must be exactly 10 digits.');
       return;
     }

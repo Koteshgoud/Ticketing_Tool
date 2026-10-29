@@ -1,12 +1,24 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, Check, CheckCheck, Ticket, AlertTriangle, AlertCircle } from 'lucide-react';
 import { useTickets } from '../../hooks/useTickets';
 
 export const NotificationDropdown: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
   const { notifications, markNotificationRead, markAllNotificationsRead } = useTickets();
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const handleSelect = async (notif: { id: string; read: boolean; ticketId?: string }) => {
+    if (!notif.read) {
+      await markNotificationRead(notif.id);
+    }
+    if (notif.ticketId) {
+      setIsOpen(false);
+      navigate(`/teamlead/assigned-tickets/${encodeURIComponent(notif.ticketId)}`);
+    }
+  };
 
   const renderIcon = (type: string) => {
     switch (type) {
@@ -73,7 +85,7 @@ export const NotificationDropdown: React.FC = () => {
                 notifications.map((notif) => (
                   <div
                     key={notif.id}
-                    onClick={() => markNotificationRead(notif.id)}
+                    onClick={() => void handleSelect(notif)}
                     className={`p-3.5 hover:bg-slate-50 transition-colors cursor-pointer flex items-start gap-3 ${
                       !notif.read ? 'bg-sky-50/40' : ''
                     }`}

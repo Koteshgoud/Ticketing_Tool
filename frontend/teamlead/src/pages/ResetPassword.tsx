@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, Lock, CheckCircle2, ArrowLeft } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { apiRequest } from '../services/backendAuth';
 
 export const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
@@ -46,46 +46,27 @@ export const ResetPassword: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
 
     try {
-      const { data: dbUser, error: findErr } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
-
-      if (findErr || !dbUser) {
-        setErrors({ email: 'No account found with this email address.' });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Verify reset code
-      if (dbUser.invite_token && dbUser.invite_token.startsWith('reset-')) {
-        const expectedCode = dbUser.invite_token.replace('reset-', '');
-        if (code.trim() !== expectedCode) {
-          setErrors({ code: 'Invalid verification code. Please check your email.' });
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      const { error: updErr } = await supabase
-        .from('users')
-        .update({
-          password: password,
-          invite_token: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('email', cleanEmail);
-
-      if (updErr) {
-        setErrors({ general: 'Failed to update password. Please try again.' });
-        setIsSubmitting(false);
-        return;
-      }
-
+      await apiRequest('/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          code: code.trim(),
+          new_password: password,
+        }),
+      });
       setIsSuccess(true);
     } catch (err: any) {
-      setErrors({ general: 'Error processing password reset.' });
+      const message = err?.message || '';
+      if (message.toLowerCase().includes('code')) {
+        setErrors({ code: 'Invalid or expired verification code. Please request a new one.' });
+      } else if (message.toLowerCase().includes('not found')) {
+        setErrors({ email: 'No account found with this email address.' });
+      } else if (message.toLowerCase().includes('password')) {
+        setErrors({ password: message });
+      } else {
+        setErrors({ general: message || 'Failed to reset password. Please try again.' });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -116,7 +97,7 @@ export const ResetPassword: React.FC = () => {
               </div>
               <h3 className="text-lg font-bold text-slate-900">Password Reset Complete!</h3>
               <p className="text-xs text-slate-600">
-                Your password has been successfully updated in the database.
+                Your password has been successfully updated.
               </p>
               <button
                 type="button"

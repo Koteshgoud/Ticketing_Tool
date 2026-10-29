@@ -1,0 +1,669 @@
+"""Authenticated portal endpoints: directory, profile and notifications.
+
+These replace the frontends' direct Supabase reads. Every response is scoped
+by the caller's role and identity, and password hashes are never returned.
+"""
+
+from __future__ import annotations
+
+import random
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+
+from app.auth.dependencies import get_current_user, require_role
+from app.auth.passwords import hash_password
+from app.db.supabase import get_supabase_admin_client
+from app.services.access import (
+    ROLE_ADMIN,
+    ROLE_TEAMLEAD,
+    ROLE_EMPLOYEE,
+    _scopes_overlap,
+    fetch_all_users_cached,
+    invalidate_team_cache,
+    invalidate_user_cache,
+    is_admin,
+    is_teamlead,
+    load_current_user,
+    normalize_role,
+    notification_matches_scope,
+    notification_visible,
+    role_of,
+    scoped_tickets,
+    teamlead_managed_employees,
+)
+
+router = APIRouter(tags=["Portal"])
+
+PUBLIC_USER_FIELDS = (
+    "id, name, email, phone, role, department, designation, team, avatar, "
+    "location, status, created_at"
+)
+
+
+# ── Shared dependencies ──────────────────────────────────────────────────────
+
+def _current(payload: dict[str, Any] = Depends(get_current_user)) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        user = load_current_user(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    if str(user.get("status") or "").strip().lower() == "inactive":
+        raise HTTPException(status_code=403, detail="User account is inactive")
+    return payload, user
+
+
+def _safe_user(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: row.get(k) for k in PUBLIC_USER_FIELDS.split(", ")} | {
+        "role": normalize_role(row.get("role")),
+    }
+
+
+def _all_users() -> list[dict[str, Any]]:
+    return fetch_all_users_cached()
+
+
+def _visible_user(
+    payload: dict[str, Any],
+    user: dict[str, Any],
+    row: dict[str, Any],
+    managed_ids: set[str] | None = None,
+) -> bool:
+    """Whether ``row`` may appear in the caller's directory listing."""
+    if is_admin(payload):
+        return True
+    if str(row.get("id") or "") == str(user.get("id") or ""):
+        return True
+    if is_teamlead(payload):
+        # A Team Lead must be able to route a ticket to *any* Team Lead and to
+        # request assistance from an administrator, so both roles stay in the
+        # directory. Employee visibility stays limited to the Lead's own team.
+        if normalize_role(row.get("role")) in (ROLE_ADMIN, ROLE_TEAMLEAD):
+            return True
+        if managed_ids is None:
+            managed_ids = {str(m.get("id")) for m in teamlead_managed_employees(user)}
+        return str(row.get("id") or "") in managed_ids
+    # Employees may see Team Leads and colleagues across departments (to route tickets
+    # to the proper department lead and tag team members).
+    if normalize_role(row.get("role")) in (ROLE_TEAMLEAD, ROLE_EMPLOYEE):
+        return True
+    return _scopes_overlap(user.get("department"), row.get("department"))
+
+
+def _visible_rows(
+    payload: dict[str, Any], user: dict[str, Any], rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Filter a user list for the caller, resolving the team scope only once."""
+    if is_admin(payload):
+        return list(rows)
+    managed_ids: set[str] | None = None
+    if is_teamlead(payload):
+        managed_ids = {str(m.get("id")) for m in teamlead_managed_employees(user)}
+    return [
+        row
+        for row in rows
+        if _visible_user(payload, user, row, managed_ids)
+    ]
+
+
+# ── Directory / profile ──────────────────────────────────────────────────────
+
+@router.get("/users/directory", summary="Role-scoped user directory")
+def user_directory(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+    role: str | None = Query(None, description="Filter by normalized role"),
+) -> list[dict[str, Any]]:
+    payload, user = context
+    rows = _visible_rows(payload, user, _all_users())
+    if role:
+        wanted = normalize_role(role)
+        rows = [r for r in rows if normalize_role(r.get("role")) == wanted]
+    rows.sort(key=lambda r: (str(r.get("name") or "").lower(), str(r.get("email") or "")))
+    return [_safe_user(r) for r in rows]
+
+
+@router.get("/users/profile", summary="Current user's profile")
+def get_profile(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> dict[str, Any]:
+    _, user = context
+    return _safe_user(user)
+
+
+@router.get("/team-leads/{team_lead_id}/employees", summary="Get employees strictly managed by a specific Team Lead")
+def get_team_lead_employees(
+    team_lead_id: str,
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> list[dict[str, Any]]:
+    clean_tl_id = str(team_lead_id).strip()
+
+    # 1. Fast path: check in-memory cached users first (0ms latency)
+    all_users = fetch_all_users_cached()
+    tl_user = next(
+        (
+            u for u in all_users
+            if str(u.get("id") or "").strip().lower() == clean_tl_id.lower()
+            or str(u.get("email") or "").strip().lower() == clean_tl_id.lower()
+        ),
+        None,
+    )
+
+    if not tl_user:
+        sb = get_supabase_admin_client()
+        try:
+            res = sb.table("users").select("*").eq("id", clean_tl_id).limit(1).execute()
+            rows = res.data or []
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Database error: {exc}") from exc
+
+        if not rows:
+            try:
+                res = sb.table("users").select("*").eq("email", clean_tl_id.lower()).limit(1).execute()
+                rows = res.data or []
+            except Exception:
+                pass
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Team lead not found")
+        tl_user = rows[0]
+
+    if normalize_role(tl_user.get("role")) != ROLE_TEAMLEAD:
+        raise HTTPException(status_code=400, detail="Specified user is not a Team Lead")
+
+    managed = teamlead_managed_employees(tl_user)
+    managed.sort(key=lambda r: (str(r.get("name") or "").lower(), str(r.get("email") or "")))
+    return [_safe_user(r) for r in managed]
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    phone: str | None = Field(default=None, max_length=40)
+    department: str | None = Field(default=None, max_length=120)
+    designation: str | None = Field(default=None, max_length=120)
+    location: str | None = Field(default=None, max_length=120)
+    avatar: str | None = None
+    # ``avatar`` set to an empty string/null clears only the photo reference.
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    current_password: str | None = None
+
+
+@router.patch("/users/profile", summary="Update the current user's profile")
+def update_profile(
+    body: ProfileUpdate,
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> dict[str, Any]:
+    payload, user = context
+    updates: dict[str, Any] = {}
+
+    for field in ("name", "phone", "department", "designation", "location"):
+        value = getattr(body, field)
+        if value is not None:
+            updates[field] = value.strip()
+
+    if body.avatar is not None:
+        avatar = body.avatar.strip()
+        if avatar and len(avatar) > 3_000_000:
+            raise HTTPException(status_code=413, detail="Profile photo is too large (max ~2 MB)")
+        if avatar and not avatar.startswith(("data:image/", "http://", "https://", "/")):
+            raise HTTPException(status_code=400, detail="Invalid profile photo format")
+        updates["avatar"] = avatar or None
+
+    if body.password:
+        updates["password"] = hash_password(body.password)
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No profile fields provided")
+
+    # Only an admin may move their own account between departments; everyone
+    # else keeps their existing department to preserve scope integrity.
+    if "department" in updates and not is_admin(payload):
+        updates.pop("department")
+
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    sb = get_supabase_admin_client()
+    try:
+        res = sb.table("users").update(updates).eq("id", str(user.get("id"))).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not update profile: {exc}") from exc
+    updated = (res.data or [])[0] if (res.data or []) else {**user, **updates}
+    invalidate_user_cache(str(user.get("id")), str(user.get("email")))
+    return _safe_user(updated)
+
+
+# ── Departments ──────────────────────────────────────────────────────────────
+
+_DEPARTMENTS_CACHE: tuple[float, list[dict[str, Any]]] | None = None
+_DEPARTMENTS_CACHE_TTL = 300.0  # 5 minutes
+
+@router.get("/departments", summary="List configured departments")
+def get_departments(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> list[dict[str, Any]]:
+    global _DEPARTMENTS_CACHE
+    now = time.time()
+    if _DEPARTMENTS_CACHE and (now - _DEPARTMENTS_CACHE[0]) < _DEPARTMENTS_CACHE_TTL:
+        return _DEPARTMENTS_CACHE[1]
+
+    sb = get_supabase_admin_client()
+    try:
+        res = sb.table("departments").select("id, name, code, display_aliases, description, is_active").eq("is_active", True).order("id").execute()
+        rows = res.data or []
+        if rows:
+            _DEPARTMENTS_CACHE = (now, rows)
+            return rows
+    except Exception as exc:
+        print(f"[portal] departments table fallback: {exc}")
+    fallback = [
+        {"id": 1, "name": "IT Support", "code": "ITSUPPORT", "display_aliases": ["IT Support", "IT Support Team", "IT"]},
+        {"id": 2, "name": "Finance", "code": "FINANCE", "display_aliases": ["Finance", "Finance & Payroll"]},
+        {"id": 3, "name": "HR", "code": "HR", "display_aliases": ["HR", "HR Operations", "HR & Benefits"]},
+        {"id": 4, "name": "Operations", "code": "OPS", "display_aliases": ["Operations", "Operations & Logistics"]},
+        {"id": 8, "name": "Facilities", "code": "FACILITY", "display_aliases": ["Facilities", "Facilities & Building"]},
+        {"id": 9, "name": "General Administration", "code": "GENADMIN", "display_aliases": ["General Administration", "Administration"]},
+        {"id": 10, "name": "Other", "code": "OTHER", "display_aliases": ["Other", "Others"]},
+    ]
+    _DEPARTMENTS_CACHE = (now, fallback)
+    return fallback
+
+
+# ── Notifications ────────────────────────────────────────────────────────────
+
+_NOTIF_CACHE: tuple[float, list[dict[str, Any]]] | None = None
+_NOTIF_CACHE_TTL = 15.0  # seconds
+
+
+def invalidate_notifications_cache() -> None:
+    global _NOTIF_CACHE
+    _NOTIF_CACHE = None
+
+
+def _notification_rows() -> list[dict[str, Any]]:
+    global _NOTIF_CACHE
+    now = time.time()
+    if _NOTIF_CACHE and (now - _NOTIF_CACHE[0]) < _NOTIF_CACHE_TTL:
+        return _NOTIF_CACHE[1]
+    try:
+        res = (
+            get_supabase_admin_client()
+            .table("portal_notifications")
+            .select("*")
+            .order("timestamp", desc=True)
+            .execute()
+        )
+        rows = res.data or []
+        _NOTIF_CACHE = (now, rows)
+        return rows
+    except Exception as exc:
+        print(f"[notifications] unavailable: {exc}")
+        return []
+
+
+def _visible_notifications(payload: dict[str, Any], user: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = _notification_rows()
+    if is_admin(payload):
+        return [n for n in rows if notification_visible(payload, user, n)]
+    visible_tids = {str(t.get("id")) for t in scoped_tickets(payload, user) if t.get("id")}
+    return [
+        n
+        for n in rows
+        if notification_matches_scope(payload, user, n, visible_ticket_ids=visible_tids)
+    ]
+
+
+@router.get("/notifications", summary="List notifications addressed to the current user")
+def list_notifications(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+    limit: int = Query(50, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    payload, user = context
+    rows = _visible_notifications(payload, user)
+    return rows[:limit]
+
+
+@router.get("/notifications/unread-count", summary="Unread notification count for the current user")
+def unread_count(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> dict[str, int]:
+    payload, user = context
+    rows = _visible_notifications(payload, user)
+    return {"count": sum(1 for n in rows if not n.get("read"))}
+
+
+@router.post("/notifications/{notification_id}/read", summary="Mark one notification as read")
+def mark_read(
+    notification_id: str,
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> dict[str, Any]:
+    payload, user = context
+    visible = {str(n.get("id")): n for n in _visible_notifications(payload, user)}
+    if notification_id not in visible:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    sb = get_supabase_admin_client()
+    res = sb.table("portal_notifications").update({"read": True}).eq("id", notification_id).execute()
+    return {"success": True, "notification": (res.data or [visible[notification_id]])[0]}
+
+
+@router.post("/notifications/read-all", summary="Mark all notifications visible to the current user as read")
+def mark_all_read(
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> dict[str, Any]:
+    payload, user = context
+    ids = [str(n.get("id")) for n in _visible_notifications(payload, user) if not n.get("read")]
+    sb = get_supabase_admin_client()
+    updated = 0
+    for notif_id in ids:
+        try:
+            sb.table("portal_notifications").update({"read": True}).eq("id", notif_id).execute()
+            updated += 1
+        except Exception as exc:
+            print(f"[notifications] could not mark {notif_id} read: {exc}")
+    return {"success": True, "updated": updated}
+
+
+class NotificationCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    message: str = ""
+    type: str = "info"
+    for_role: str = "all"
+    ticket_id: str | None = None
+
+
+@router.post("/notifications", status_code=status.HTTP_201_CREATED, summary="Create a notification")
+def create_notification(
+    body: NotificationCreate,
+    context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current),
+) -> dict[str, Any]:
+    payload, user = context
+    role = role_of(payload)
+    target = (body.for_role or "all").strip()
+    target_lower = target.lower()
+
+    if role == "employee" and target_lower not in ("employee", f"user:{user.get('id')}", "all"):
+        raise HTTPException(status_code=403, detail="Employees cannot target other roles")
+    if role == "teamlead" and target_lower == "admin":
+        raise HTTPException(status_code=403, detail="Team leads cannot broadcast to admins")
+
+    row = {
+        "id": f"notif-{int(time.time() * 1000)}-{random.randint(100, 999)}",
+        "ticket_id": body.ticket_id,
+        "title": body.title,
+        "message": body.message,
+        "type": body.type or "info",
+        "for_role": target,
+        "read": False,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    sb = get_supabase_admin_client()
+    try:
+        res = sb.table("portal_notifications").insert(row).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not create notification: {exc}") from exc
+    return (res.data or [row])[0]
+
+
+# ── Admin user management ────────────────────────────────────────────────────
+
+@router.get(
+    "/admin/users",
+    summary="List all users (admin only)",
+    dependencies=[Depends(require_role("admin"))],
+)
+def admin_list_users() -> list[dict[str, Any]]:
+    rows = _all_users()
+    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+    return [_safe_user(r) for r in rows]
+
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: str
+    phone: str | None = None
+    role: str = "employee"
+    department: str | None = None
+    designation: str | None = None
+    team: str | None = None
+    status: str = "Active"
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    employee_id: str | None = None
+    send_email_invite: bool = False
+    invite_token: str | None = None
+
+
+@router.post(
+    "/admin/users",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a user (admin only)",
+    dependencies=[Depends(require_role("admin"))],
+)
+def admin_create_user(body: UserCreate) -> dict[str, Any]:
+    email = body.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+
+    sb = get_supabase_admin_client()
+    existing = sb.table("users").select("id").eq("email", email).limit(1).execute()
+    if existing.data:
+        raise HTTPException(status_code=409, detail="A user with this email already exists")
+
+    user_id = (body.employee_id or "").strip() or f"usr-{int(time.time() * 1000)}"
+    now = datetime.now(timezone.utc).isoformat()
+    row = {
+        "id": user_id,
+        "name": body.name.strip(),
+        "email": email,
+        "phone": (body.phone or "").strip(),
+        "role": normalize_role(body.role),
+        "department": body.department or "IT Support",
+        "designation": body.designation,
+        "team": body.team,
+        "status": body.status or "Active",
+        "password": hash_password(body.password or "Password123"),
+        "invite_token": body.invite_token,
+        "invite_sent_at": now if body.send_email_invite else None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        res = sb.table("users").insert(row).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not create user: {exc}") from exc
+    created = (res.data or [row])[0]
+    return _safe_user(created)
+
+
+class UserAdminUpdate(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    role: str | None = None
+    department: str | None = None
+    designation: str | None = None
+    team: str | None = None
+    status: str | None = None
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+    invite_token: str | None = None
+
+
+@router.patch(
+    "/admin/users/{user_id}",
+    summary="Update a user (admin only)",
+    dependencies=[Depends(require_role("admin"))],
+)
+def admin_update_user(user_id: str, body: UserAdminUpdate) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    data = body.model_dump()
+    for field in ("name", "phone", "department", "designation", "team", "status"):
+        value = data.get(field)
+        if value is not None:
+            updates[field] = value.strip() if isinstance(value, str) else value
+    if data.get("email"):
+        updates["email"] = data["email"].strip().lower()
+    if data.get("role"):
+        updates["role"] = normalize_role(data["role"])
+    if data.get("password"):
+        updates["password"] = hash_password(data["password"])
+    if data.get("invite_token") is not None:
+        updates["invite_token"] = data["invite_token"].strip() or None
+        updates["invite_sent_at"] = datetime.now(timezone.utc).isoformat()
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    sb = get_supabase_admin_client()
+    try:
+        res = sb.table("users").update(updates).eq("id", user_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not update user: {exc}") from exc
+    if not (res.data or []):
+        raise HTTPException(status_code=404, detail="User not found")
+    return _safe_user((res.data or [])[0])
+
+
+@router.delete(
+    "/admin/users/{user_id}",
+    summary="Delete a user (admin only)",
+    dependencies=[Depends(require_role("admin"))],
+)
+def admin_delete_user(
+    user_id: str,
+    payload: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    if str(payload.get("sub") or "") == user_id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    sb = get_supabase_admin_client()
+    try:
+        sb.table("users").delete().eq("id", user_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not delete user: {exc}") from exc
+    return {"success": True, "id": user_id}
+
+
+# ��"? Team-lead scoped user management ��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?��"?
+
+
+def _team_lead_can_manage(context_user: dict[str, Any], target: dict[str, Any]) -> bool:
+    if normalize_role(target.get("role")) in ("admin", "teamlead"):
+        return False
+    managed_ids = {str(m.get("id")) for m in teamlead_managed_employees(context_user)}
+    return str(target.get("id") or "") in managed_ids
+
+
+@router.get("/team/users", summary="List users manageable by the current team lead")
+def team_list_users(context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current)) -> list[dict[str, Any]]:
+    payload, user = context
+    if not is_teamlead(payload):
+        raise HTTPException(status_code=403, detail="Team lead access required")
+    rows = teamlead_managed_employees(user)
+    rows.sort(key=lambda r: (str(r.get("name") or "").lower(), str(r.get("email") or "")))
+    return [_safe_user(r) for r in rows]
+
+
+@router.post("/team/users", status_code=status.HTTP_201_CREATED, summary="Create an employee under team lead scope")
+def team_create_user(body: UserCreate, context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current)) -> dict[str, Any]:
+    payload, user = context
+    if not is_teamlead(payload):
+        raise HTTPException(status_code=403, detail="Team lead access required")
+    email = (body.email or "").strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+    sb = get_supabase_admin_client()
+    existing = sb.table("users").select("id").eq("email", email).limit(1).execute()
+    if existing.data:
+        raise HTTPException(status_code=409, detail="A user with this email already exists")
+
+    user_id = (body.employee_id or "").strip() or f"usr-{int(time.time() * 1000)}"
+    now = datetime.now(timezone.utc).isoformat()
+    tl_id = str(user.get("id") or "").strip()
+    tl_team = str(user.get("team") or "").strip()
+    assigned_team = tl_team or tl_id or (body.team or "").strip()
+
+    # Force role to employee and bind to this team lead's team
+    row = {
+        "id": user_id,
+        "name": (body.name or "").strip(),
+        "email": email,
+        "phone": (body.phone or "").strip(),
+        "role": "employee",
+        "department": body.department or user.get("department") or "IT Support",
+        "designation": body.designation,
+        "team": assigned_team,
+        "status": body.status or "Active",
+        "password": hash_password(body.password or "Password123"),
+        "invite_token": body.invite_token,
+        "invite_sent_at": now if body.send_email_invite else None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        res = sb.table("users").insert(row).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not create user: {exc}") from exc
+    invalidate_team_cache(tl_id)
+    created = (res.data or [row])[0]
+    return _safe_user(created)
+
+
+@router.patch("/team/users/{user_id}", summary="Update an employee under team lead scope")
+def team_update_user(user_id: str, body: UserAdminUpdate, context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current)) -> dict[str, Any]:
+    payload, user = context
+    if not is_teamlead(payload):
+        raise HTTPException(status_code=403, detail="Team lead access required")
+    sb = get_supabase_admin_client()
+    res = sb.table("users").select("*").eq("id", user_id).limit(1).execute()
+    target = (res.data or [])[0] if (res.data or []) else None
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not _team_lead_can_manage(user, target):
+        raise HTTPException(status_code=403, detail="Not allowed to manage this user")
+    updates: dict[str, Any] = {}
+    data = body.model_dump()
+    for field in ("name", "phone", "designation", "team", "status"):
+        value = data.get(field)
+        if value is not None:
+            updates[field] = value.strip() if isinstance(value, str) else value
+    if data.get("department") is not None:
+        updates["department"] = data["department"].strip() if isinstance(data["department"], str) else data["department"]
+    if data.get("email"):
+        updates["email"] = data["email"].strip().lower()
+    if data.get("role") is not None:
+        updates["role"] = "employee"
+    if data.get("password"):
+        updates["password"] = hash_password(data["password"])
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        res2 = sb.table("users").update(updates).eq("id", user_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not update user: {exc}") from exc
+    if not (res2.data or []):
+        raise HTTPException(status_code=404, detail="User not found")
+    invalidate_team_cache(str(user.get("id") or ""))
+    invalidate_user_cache(user_id)
+    return _safe_user((res2.data or [])[0])
+
+
+@router.delete("/team/users/{user_id}", summary="Delete an employee under team lead scope")
+def team_delete_user(user_id: str, context: tuple[dict[str, Any], dict[str, Any]] = Depends(_current)) -> dict[str, Any]:
+    payload, user = context
+    if not is_teamlead(payload):
+        raise HTTPException(status_code=403, detail="Team lead access required")
+    if str(payload.get("sub") or "") == user_id or str(user.get("id") or "") == user_id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    sb = get_supabase_admin_client()
+    res = sb.table("users").select("*").eq("id", user_id).limit(1).execute()
+    target = (res.data or [])[0] if (res.data or []) else None
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not _team_lead_can_manage(user, target):
+        raise HTTPException(status_code=403, detail="Not allowed to delete this user")
+    try:
+        sb.table("users").delete().eq("id", user_id).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not delete user: {exc}") from exc
+    invalidate_team_cache(str(user.get("id") or ""))
+    invalidate_user_cache(user_id)
+    return {"success": True, "id": user_id}

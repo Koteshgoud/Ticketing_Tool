@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTickets } from '../../hooks/useTickets';
 import { useAuth } from '../../hooks/useAuth';
@@ -20,7 +20,7 @@ import {
 
 export const TeamLeadDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { tickets, selectedTicket, setSelectedTicket } = useTickets();
+  const { tickets, selectedTicket, setSelectedTicket, isLoading, error } = useTickets();
   const { users } = useAuth();
 
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
@@ -28,60 +28,80 @@ export const TeamLeadDashboard: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dashboardFilter, setDashboardFilter] = useState<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'>('All');
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
-  };
+  }, []);
 
   // Helper functions for ticket states
-  const isTicketUnassigned = (t: Ticket) =>
-    !t.assignedAgent ||
-    t.assignedAgent.trim() === '' ||
-    t.assignedAgent.toLowerCase() === 'unassigned' ||
-    t.assignedToType === 'unassigned';
+  // Unassigned = still active AND has no valid assigned agent. This matches the
+  // Admin and Employee portals so all three agree on the same count. We rely on
+  // assignedAgent (the concrete assignment) rather than the assignedToType
+  // field, which is not always kept in sync when an agent is assigned.
+  const isTicketUnassigned = useCallback(
+    (t: Ticket) =>
+      t.status !== 'Resolved' &&
+      t.status !== 'Closed' &&
+      (typeof t.isUnassigned === 'boolean'
+        ? t.isUnassigned
+        : !t.assignedAgent ||
+          t.assignedAgent.trim() === '' ||
+          t.assignedAgent.toLowerCase() === 'unassigned'),
+    [],
+  );
 
-  const isTicketSLARisk = (t: Ticket) => {
-    const s = (t.slaStatus || '').toLowerCase();
-    return s.includes('risk') || s.includes('breach') || s.includes('approach');
-  };
+  // Server-computed SLA status: only "At Risk" is risk; breached, resolved, and escalated are separate.
+  const isTicketSLARisk = useCallback((t: Ticket) => {
+    const st = (t.status || '').toLowerCase();
+    if (st === 'resolved' || st === 'closed' || st === 'escalated') return false;
+    return t.slaStatus === 'At Risk';
+  }, []);
 
-  // 1. Calculate Summary Card Metrics
+  // 1. Calculate Summary Card Metrics. Memoised so the counters are not
+  // recomputed on every unrelated re-render of the dashboard.
   const totalTickets = tickets.length;
-  const unassignedCount = tickets.filter(isTicketUnassigned).length;
-  const inProgressCount = tickets.filter((t) => t.status === 'In Progress').length;
-  const slaRiskCount = tickets.filter(isTicketSLARisk).length;
+  const unassignedCount = useMemo(
+    () => tickets.filter(isTicketUnassigned).length,
+    [tickets, isTicketUnassigned],
+  );
+  const inProgressCount = useMemo(
+    () => tickets.filter((t) => t.status === 'In Progress').length,
+    [tickets],
+  );
+  const slaRiskCount = useMemo(
+    () => tickets.filter(isTicketSLARisk).length,
+    [tickets, isTicketSLARisk],
+  );
 
   // 2. Prepare Team Members (Strictly employees, never admins or team leads)
-  const employeeUsers = users.filter((u) => u.role === 'employee');
-  const displayEmployees = employeeUsers.slice(0, 4);
+  const employeeUsers = useMemo(() => users.filter((u) => u.role === 'employee'), [users]);
+  const displayEmployees = useMemo(() => employeeUsers.slice(0, 4), [employeeUsers]);
 
-  // Helper to count active tickets for a user
-  const getEmployeeActiveTicketCount = (empId: string, empName: string) => {
-    return tickets.filter(
-      (t) =>
-        (t.employeeId === empId ||
-          t.employee === empName ||
-          t.assignedAgentId === empId ||
-          t.assignedAgent === empName) &&
-        t.status !== 'Resolved' &&
-        t.status !== 'Closed'
-    ).length;
-  };
+  // Helper to count active tickets for a user. The counts are computed once
+  // per ticket change instead of on every render of the dashboard.
+  const employeeTicketCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const emp of displayEmployees) {
+      const count = tickets.filter(
+        (t) =>
+          (t.employeeId === emp.id ||
+            t.employee === emp.name ||
+            t.assignedAgentId === emp.id ||
+            t.assignedAgent === emp.name) &&
+          t.status !== 'Resolved' &&
+          t.status !== 'Closed'
+      ).length;
+      counts.set(emp.id, count);
+    }
+    return counts;
+  }, [tickets, displayEmployees]);
 
-  // 3. Tickets Needing Attention (Critical, High priority, SLA risk, Escalated, Pending)
-  const ticketsNeedingAttention = tickets
-    .filter(
-      (t) =>
-        t.priority === 'Critical' ||
-        t.priority === 'High' ||
-        t.status === 'Escalated' ||
-        t.slaStatus === 'At Risk' ||
-        t.slaStatus === 'Breached' ||
-        t.status === 'Pending'
-    )
-    .slice(0, 5);
+  const getEmployeeActiveTicketCount = useCallback(
+    (empId: string) => employeeTicketCounts.get(empId) || 0,
+    [employeeTicketCounts],
+  );
 
-  // 4. Quick Filter Toolbar Pills and Filtered Recent Tickets
+  // 3. Quick Filter Toolbar Pills and Filtered Recent Tickets
   const quickFilterPills: Array<'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'> = [
     'All',
     'Unassigned',
@@ -90,31 +110,39 @@ export const TeamLeadDashboard: React.FC = () => {
     'Escalated'
   ];
 
-  const getQuickFilterCount = (filter: 'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated') => {
-    switch (filter) {
-      case 'All':
-        return tickets.length;
-      case 'Unassigned':
-        return tickets.filter(isTicketUnassigned).length;
-      case 'In Progress':
-        return tickets.filter((t) => t.status === 'In Progress').length;
-      case 'SLA Risk':
-        return tickets.filter(isTicketSLARisk).length;
-      case 'Escalated':
-        return tickets.filter((t) => t.status === 'Escalated').length;
-    }
-  };
+  const quickFilterCounts = useMemo(
+    () => ({
+      All: tickets.length,
+      Unassigned: unassignedCount,
+      'In Progress': inProgressCount,
+      'SLA Risk': slaRiskCount,
+      Escalated: tickets.filter((t) => t.status === 'Escalated').length,
+    }),
+    [tickets, unassignedCount, inProgressCount, slaRiskCount],
+  );
 
-  const filteredRecentTickets = [...tickets]
-    .filter((t) => {
-      if (dashboardFilter === 'Unassigned') return isTicketUnassigned(t);
-      if (dashboardFilter === 'In Progress') return t.status === 'In Progress';
-      if (dashboardFilter === 'SLA Risk') return isTicketSLARisk(t);
-      if (dashboardFilter === 'Escalated') return t.status === 'Escalated';
-      return true;
-    })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
+  const getQuickFilterCount = useCallback(
+    (filter: 'All' | 'Unassigned' | 'In Progress' | 'SLA Risk' | 'Escalated'): number | string => {
+      if (error) return '—';
+      return quickFilterCounts[filter];
+    },
+    [error, quickFilterCounts],
+  );
+
+  const filteredRecentTickets = useMemo(
+    () =>
+      [...tickets]
+        .filter((t) => {
+          if (dashboardFilter === 'Unassigned') return isTicketUnassigned(t);
+          if (dashboardFilter === 'In Progress') return t.status === 'In Progress';
+          if (dashboardFilter === 'SLA Risk') return isTicketSLARisk(t);
+          if (dashboardFilter === 'Escalated') return t.status === 'Escalated';
+          return true;
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5),
+    [tickets, dashboardFilter, isTicketUnassigned, isTicketSLARisk],
+  );
 
   // Priority Badge Renderer
   const renderPriorityBadge = (priority: TicketPriority) => {
@@ -198,6 +226,13 @@ export const TeamLeadDashboard: React.FC = () => {
         </div>
       )}
 
+      {error && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-medium flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Could not load live ticket data: {error}
+        </div>
+      )}
+
       {/* Header Banner - Matching Admin Dashboard */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white px-5 py-4 rounded-xl border border-slate-200 shadow-xs">
         <div>
@@ -205,7 +240,7 @@ export const TeamLeadDashboard: React.FC = () => {
             Team Lead Dashboard
           </h1>
           <p className="text-[13px] text-slate-500 mt-0.5">
-            Quick overview of department tickets and team activity
+            {isLoading ? 'Loading live ticket data…' : 'Quick overview of department tickets and team activity'}
           </p>
         </div>
 
@@ -247,7 +282,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-[#0284C7] transition-colors">
-              {totalTickets}
+              {error ? '—' : totalTickets}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Department total</span>
@@ -271,7 +306,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-sky-600 transition-colors">
-              {unassignedCount}
+              {error ? '—' : unassignedCount}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Pending assignment</span>
@@ -295,7 +330,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">
-              {inProgressCount}
+              {error ? '—' : inProgressCount}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Active queue</span>
@@ -319,7 +354,7 @@ export const TeamLeadDashboard: React.FC = () => {
           </div>
           <div className="mt-2 w-full">
             <p className="text-[26px] font-bold text-rose-600 leading-tight">
-              {slaRiskCount}
+              {error ? '—' : slaRiskCount}
             </p>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[11.5px] text-slate-400">Approaching SLA</span>
@@ -350,8 +385,8 @@ export const TeamLeadDashboard: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {displayEmployees.map((emp, index) => {
-              const ticketCount = getEmployeeActiveTicketCount(emp.id, emp.name);
-              const isBusy = index === 2 || ticketCount >= 4;
+              const ticketCount = getEmployeeActiveTicketCount(emp.id);
+              const isBusy = ticketCount >= 4;
               const firstName = emp.name.split(' ')[0];
 
               return (
@@ -388,63 +423,7 @@ export const TeamLeadDashboard: React.FC = () => {
         )}
       </div>
 
-      {/* 3. Tickets Needing Attention */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-wider">
-            Tickets Needing Attention
-          </h2>
-          <Link
-            to="/teamlead/team-tickets"
-            className="text-xs text-[#0284C7] hover:text-[#0369a1] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
-          >
-            View All <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="overflow-x-auto w-full max-w-full min-w-0">
-          <table className="w-full min-w-[650px] text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                <th className="py-2.5 px-3 w-28 whitespace-nowrap">Ticket ID</th>
-                <th className="py-2.5 px-3 min-w-[200px]">Subject</th>
-                <th className="py-2.5 px-3 w-28 whitespace-nowrap">Priority</th>
-                <th className="py-2.5 px-3 w-28 whitespace-nowrap">Status</th>
-                <th className="py-2.5 px-3 w-20 text-right whitespace-nowrap">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {ticketsNeedingAttention.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-2.5 px-3 font-mono font-semibold text-[#0284C7] text-xs whitespace-nowrap">{t.id}</td>
-                  <td className="py-2.5 px-3 font-medium text-slate-900 truncate" title={t.subject}>
-                    {t.subject}
-                  </td>
-                  <td className="py-2.5 px-3 whitespace-nowrap">{renderPriorityBadge(t.priority)}</td>
-                  <td className="py-2.5 px-3 whitespace-nowrap">{renderStatusBadge(t.status)}</td>
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => setSelectedTicket(t)}
-                      className="px-2.5 py-1 text-xs font-semibold text-[#0284C7] hover:text-[#0369a1] hover:bg-sky-50 rounded transition-colors cursor-pointer whitespace-nowrap"
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {ticketsNeedingAttention.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-4 text-center text-xs text-slate-400">
-                    No urgent tickets needing attention
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 4. Recent Tickets */}
+      {/* 3. Recent Tickets */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>

@@ -39,6 +39,7 @@ dependencies = [
     # ── Utilities ────────────────────────────────────────
     "python-multipart>=0.0.9",
     "tenacity>=8.3.0",
+    "supabase>=2.0.0",
 ]
 
 [project.optional-dependencies]

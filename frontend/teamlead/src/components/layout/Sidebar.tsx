@@ -12,7 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  TicketCheck
+  TicketCheck,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTickets } from '../../hooks/useTickets';
@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleLogoutConfirm = () => {
     setIsLogoutModalOpen(false);
     logout();
-    navigate('/signup');
+    navigate('/login', { replace: true });
   };
 
   const assignedCount = (tickets || []).filter(

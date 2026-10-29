@@ -20,7 +20,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { registerUser, getCurrentSessionUser, UserRoleType } from '../../services/unifiedAuth';
-import { supabase } from '../../services/supabaseClient';
+import { apiRequestSafe, jsonInit } from '../../services/backendAuth';
 
 interface PortalConfig {
   role: UserRoleType;
@@ -160,20 +160,21 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
   const checkEmailForPendingInvite = async (candidateEmail: string) => {
     if (!candidateEmail || !candidateEmail.includes('@') || isInviteVerified) return;
     try {
-      const { data: user } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', candidateEmail.trim().toLowerCase())
-        .maybeSingle();
+      const res = await apiRequestSafe<{
+        valid: boolean;
+        pending?: boolean;
+        has_token?: boolean;
+        user?: any;
+      }>(`/auth/verify-invite?email=${encodeURIComponent(candidateEmail.trim().toLowerCase())}`);
 
-      if (user && user.status === 'Pending Invitation') {
+      if (res.data?.valid && res.data.pending && res.data.user) {
         setPendingInviteFound(true);
-        setPendingUser(user);
-        if (user.role && ['admin', 'teamlead', 'employee'].includes(user.role)) {
-          setActivePortal(user.role as UserRoleType);
+        setPendingUser(res.data.user);
+        if (res.data.user.role && ['admin', 'teamlead', 'employee'].includes(res.data.user.role)) {
+          setActivePortal(res.data.user.role as UserRoleType);
         }
-        if (user.department) setDepartment(user.department);
-        if (user.name && !fullName) setFullName(user.name);
+        if (res.data.user.department) setDepartment(res.data.user.department);
+        if (res.data.user.name && !fullName) setFullName(res.data.user.name);
       } else {
         setPendingInviteFound(false);
         setPendingUser(null);
@@ -186,46 +187,22 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
     setResendingInvite(true);
     setResendStatusMsg(null);
     try {
-      const targetUser = pendingUser || await (async () => {
-        const { data } = await supabase.from('users').select('*').eq('email', email.trim().toLowerCase()).maybeSingle();
-        return data;
-      })();
+      const res = await apiRequestSafe<{
+        success: boolean;
+        token?: string;
+        smtp_sent?: boolean;
+        message?: string;
+      }>('/auth/resend-invite', jsonInit('POST', { email: email.trim().toLowerCase() }));
 
-      if (!targetUser) {
-        setResendStatusMsg('No pending account found for this email.');
-        return;
-      }
-
-      const token = targetUser.invite_token || `inv-${Math.random().toString(36).substring(2, 10)}`;
-      if (!targetUser.invite_token) {
-        await supabase.from('users').update({ invite_token: token }).eq('email', targetUser.email);
-      }
-
-      const roleNorm = (targetUser.role || activePortal).toLowerCase().replace(' ', '');
-      const baseUrl = window.location.href.split('#')[0].replace(/\/+$/, '');
-      const signupUrl = `${baseUrl}/#/signup?token=${token}&email=${encodeURIComponent(targetUser.email)}&role=${roleNorm}`;
-
-      const resp = await fetch('http://localhost:8000/api/v1/notifications/send-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: targetUser.name || fullName || 'User',
-          email: targetUser.email,
-          employee_id: targetUser.id || '',
-          role: targetUser.role || activePortal,
-          department: targetUser.department || department,
-          invite_token: token,
-          signup_url: signupUrl,
-          password: targetUser.password || 'Password123'
-        })
-      });
-
-      const resData = await resp.json();
-      if (resData.smtp_sent) {
-        setResendStatusMsg(`✓ Live email dispatched to ${targetUser.email}! Check your inbox.`);
+      if (res.data?.success) {
+        if (res.data.smtp_sent) {
+          setResendStatusMsg(`✓ Live email dispatched to ${email}! Check your inbox.`);
+        } else {
+          setResendStatusMsg(`✓ Verification ready! Verification token: ${res.data.token}`);
+          if (res.data.token) setManualTokenInput(res.data.token);
+        }
       } else {
-        setResendStatusMsg(`✓ Verification ready! Verification token: ${token}`);
-        setManualTokenInput(token);
+        setResendStatusMsg(res.data?.message || res.error || 'No pending account found for this email.');
       }
     } catch {
       setResendStatusMsg('Could not contact notification server. Make sure backend is running.');
@@ -255,32 +232,30 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
     }
     setManualTokenError(null);
     try {
-      const { data: user } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email.trim().toLowerCase())
-        .maybeSingle();
+      const res = await apiRequestSafe<{
+        valid: boolean;
+        already_active?: boolean;
+        token_matched?: boolean;
+        user?: any;
+        message?: string;
+      }>(`/auth/verify-invite?email=${encodeURIComponent(email.trim().toLowerCase())}&token=${encodeURIComponent(manualTokenInput.trim())}`);
 
-      if (!user) {
-        setManualTokenError('No user found for this email address.');
-        return;
-      }
-      if (user.status === 'Active') {
+      if (res.data?.already_active) {
         setInviteVerificationStatus('This account is already active. Please sign in directly.');
         return;
       }
-      if (user.invite_token === manualTokenInput.trim()) {
+      if (res.data?.valid && res.data.user) {
         setIsInviteVerified(true);
         setInviteToken(manualTokenInput.trim());
-        if (user.name) setFullName(user.name);
-        if (user.role && ['admin', 'teamlead', 'employee'].includes(user.role)) {
-          setActivePortal(user.role as UserRoleType);
+        if (res.data.user.name) setFullName(res.data.user.name);
+        if (res.data.user.role && ['admin', 'teamlead', 'employee'].includes(res.data.user.role)) {
+          setActivePortal(res.data.user.role as UserRoleType);
         }
-        if (user.department) setDepartment(user.department);
-        setInviteVerificationStatus(`✓ Email Verified: Access verified for ${user.email} as ${user.role?.toUpperCase()}. Please create your password below to activate your account.`);
+        if (res.data.user.department) setDepartment(res.data.user.department);
+        setInviteVerificationStatus(`✓ Email Verified: Access verified for ${res.data.user.email} as ${res.data.user.role?.toUpperCase()}. Please create your password below to activate your account.`);
         setPendingInviteFound(false);
       } else {
-        setManualTokenError('Invalid verification token. Please verify the code received in your invitation email.');
+        setManualTokenError(res.data?.message || 'Invalid verification token. Please verify the code received in your invitation email.');
       }
     } catch {
       setManualTokenError('Verification failed. Please check connection and try again.');
@@ -306,28 +281,27 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultPortal }) => {
     }
 
     if (token && emailParam) {
-      supabase
-        .from('users')
-        .select('*')
-        .eq('email', emailParam.trim().toLowerCase())
-        .maybeSingle()
-        .then(({ data: user }) => {
-          if (user) {
-            if (user.status === 'Active') {
-              setInviteVerificationStatus('This account is already verified and active. Please sign in directly.');
-            } else if (user.invite_token === token || !user.invite_token) {
-              setIsInviteVerified(true);
-              setFullName(user.name || '');
-              if (user.role && ['admin', 'teamlead', 'employee'].includes(user.role)) {
-                setActivePortal(user.role as UserRoleType);
-              }
-              if (user.department) {
-                setDepartment(user.department);
-              }
-              setInviteVerificationStatus(`✓ Email Verified: Access granted by Administrator as ${user.role?.toUpperCase()}. Create your password to activate your account.`);
-            } else {
-              setInviteVerificationStatus('Invalid invitation verification token. Please verify your link or contact administrator.');
+      apiRequestSafe<{
+        valid: boolean;
+        already_active?: boolean;
+        user?: any;
+        message?: string;
+      }>(`/auth/verify-invite?email=${encodeURIComponent(emailParam.trim().toLowerCase())}&token=${encodeURIComponent(token)}`)
+        .then((res) => {
+          if (res.data?.already_active) {
+            setInviteVerificationStatus('This account is already verified and active. Please sign in directly.');
+          } else if (res.data?.valid && res.data.user) {
+            setIsInviteVerified(true);
+            setFullName(res.data.user.name || '');
+            if (res.data.user.role && ['admin', 'teamlead', 'employee'].includes(res.data.user.role)) {
+              setActivePortal(res.data.user.role as UserRoleType);
             }
+            if (res.data.user.department) {
+              setDepartment(res.data.user.department);
+            }
+            setInviteVerificationStatus(`✓ Email Verified: Access granted by Administrator as ${res.data.user.role?.toUpperCase()}. Create your password to activate your account.`);
+          } else {
+            setInviteVerificationStatus(res.data?.message || 'Invalid invitation verification token. Please verify your link or contact administrator.');
           }
         });
     }

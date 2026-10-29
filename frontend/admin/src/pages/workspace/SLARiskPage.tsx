@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui/Card';
 import { Table, type Column } from '../../components/ui/Table';
 import { Badge } from '../../components/ui/Badge';
@@ -7,9 +8,10 @@ import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
 import type { Ticket, User } from '../../types';
 import { AdminApiService } from '../../services/api';
-import { Clock, CheckCircle2, UserCheck, AlertTriangle, Bell, Zap } from 'lucide-react';
+import { Clock, CheckCircle2, UserCheck, AlertTriangle, Bell, Zap, Eye } from 'lucide-react';
 
 export const SLARiskPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,17 +29,28 @@ export const SLARiskPage: React.FC = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    const [ticketData, userData] = await Promise.all([
-      AdminApiService.getTickets('sla-risk'),
-      AdminApiService.getUsers()
-    ]);
-    setTickets(ticketData);
-    setUsers(userData);
-    setIsLoading(false);
+    try {
+      const [ticketData, userData] = await Promise.all([
+        AdminApiService.getTickets('sla-risk', true),
+        AdminApiService.getUsers()
+      ]);
+      setTickets(ticketData);
+      setUsers(userData);
+    } catch (e) {
+      console.error('Failed to load SLA risk data:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    window.addEventListener('ticket-updated', loadData);
+    window.addEventListener('storage', loadData);
+    return () => {
+      window.removeEventListener('ticket-updated', loadData);
+      window.removeEventListener('storage', loadData);
+    };
   }, []);
 
   const handleOpenModal = (ticket: Ticket) => {
@@ -64,8 +77,16 @@ export const SLARiskPage: React.FC = () => {
         setIsSubmitting(false);
         return;
       }
+      const selectedUser = users.find((u) => u.name === newAssignee);
       const logMessage = `SLA Intervention: Reassigned from ${selectedTicket.assignedTo || 'Unassigned'} to ${newAssignee}.${reasonNote ? ` Reason: ${reasonNote}` : ''}`;
-      await AdminApiService.updateTicket(selectedTicket.id, { assignedTo: newAssignee }, logMessage);
+      await AdminApiService.updateTicket(
+        selectedTicket.id,
+        {
+          assignedTo: newAssignee,
+          ...((selectedUser?.id) ? { assignedAgentId: selectedUser.id } : {}),
+        } as any,
+        logMessage
+      );
       setToast({
         type: 'success',
         message: `SLA Intervention applied! Ticket ${selectedTicket.ticketNumber} reassigned to ${newAssignee}. Notifications sent.`
@@ -144,12 +165,14 @@ export const SLARiskPage: React.FC = () => {
       header: 'Action',
       cell: (row) => (
         <Button
-          variant="secondary"
+          variant="ghost"
           size="sm"
-          className="text-[12px] hover:bg-amber-100 hover:text-amber-800 border-amber-300"
-          onClick={() => handleOpenModal(row)}
+          icon={<Eye className="w-3.5 h-3.5" />}
+          className="text-xs"
+          onClick={() => navigate(`/admin/workspace/tickets/${row.id}`)}
+          title="View Ticket Details"
         >
-          Speed Up SLA
+          View
         </Button>
       )
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { UserCheck, Search, Filter, RefreshCw, Eye, Clock } from 'lucide-react';
 import { EmployeeService } from '../services/employeeService';
 import type { EmployeeTicket } from '../types';
@@ -11,9 +11,13 @@ import { Table, type Column } from '../components/ui/Table';
 
 export const AssignedTickets: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const paramStatus = searchParams.get('status');
+
   const [tickets, setTickets] = useState<EmployeeTicket[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>(paramStatus || 'ALL');
 
   const loadTickets = async () => {
     await EmployeeService.fetchTickets();
@@ -23,16 +27,41 @@ export const AssignedTickets: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
+    const handleUpdate = () => {
+      loadTickets();
+    };
+    window.addEventListener('ticket-updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('ticket-updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
-  const filteredTickets = (tickets || []).filter((ticket) => {
-    const matchesSearch =
-      (ticket.ticketNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (ticket.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (ticket.department || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (ticket.assignedBy && ticket.assignedBy.toLowerCase().includes(searchTerm.toLowerCase()));
+  useEffect(() => {
+    if (paramStatus) {
+      setStatusFilter(paramStatus);
+    }
+  }, [location.search]);
 
-    const matchesStatus = statusFilter === 'ALL' || ticket.status === statusFilter;
+  const filteredTickets = (tickets || []).filter((ticket) => {
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      String(ticket.ticketNumber || '').toLowerCase().includes(q) ||
+      String(ticket.id || '').toLowerCase().includes(q) ||
+      String(ticket.title || '').toLowerCase().includes(q) ||
+      String(ticket.description || '').toLowerCase().includes(q) ||
+      String(ticket.department || '').toLowerCase().includes(q) ||
+      String(ticket.category || '').toLowerCase().includes(q) ||
+      String(ticket.priority || '').toLowerCase().includes(q) ||
+      String(ticket.assignedBy || '').toLowerCase().includes(q);
+
+    const matchesStatus =
+      statusFilter === 'ALL' ||
+      ticket.status === statusFilter ||
+      (statusFilter === 'Pending' && ticket.status === 'Escalated') ||
+      (statusFilter === 'Resolved' && ticket.status === 'Closed');
 
     return matchesSearch && matchesStatus;
   });
@@ -42,7 +71,14 @@ export const AssignedTickets: React.FC = () => {
       header: 'Ticket ID',
       accessorKey: 'ticketNumber',
       cell: (row) => (
-        <span className="font-mono text-xs font-bold text-[#0284C7]">{row.ticketNumber}</span>
+        <button
+          type="button"
+          onClick={() => navigate(`/assigned-tickets/${row.id}?mode=work`)}
+          className="font-mono text-xs font-bold text-[#0284C7] hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+          title="Work on Ticket"
+        >
+          {row.ticketNumber}
+        </button>
       ),
     },
     {
@@ -84,15 +120,17 @@ export const AssignedTickets: React.FC = () => {
     {
       header: 'Action',
       cell: (row) => (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/assigned-tickets/${row.id}`)}
-          className="border-slate-200 hover:border-[#0284C7] hover:bg-sky-50 text-slate-600 hover:text-[#0284C7] text-xs font-medium"
-        >
-          <Eye className="w-3.5 h-3.5 mr-1" />
-          Work on Ticket
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/assigned-tickets/${row.id}?mode=work`)}
+            className="border-sky-200 text-[#0284C7] hover:bg-sky-50 text-xs font-semibold cursor-pointer"
+            title="Work on Ticket"
+          >
+            Work on Ticket
+          </Button>
+        </div>
       ),
     },
   ];
